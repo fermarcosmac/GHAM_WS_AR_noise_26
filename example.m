@@ -101,7 +101,7 @@ for k = 1:K_max
     Phi_hat = zeros(lambda_g, n);
 
     for t = 1:lambda_g
-        alpha_tm1 = (t > 1) * alpha_hat(t-1); % ERROR
+        alpha_tm1 = (t > 1) * alpha_hat(t-1); % ERROR: it tries to save samples from before the signal starts!
         alpha_tm2 = (t > 2) * alpha_hat(t-2);
         r_tm1     = (t > 1) * r(t-1);
         r_tm2     = (t > 2) * r(t-2);
