@@ -120,11 +120,11 @@ fprintf('\nDone. All figures generated.\n');
 function result = run_identification_method(method_name, method_cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold)
 n = na + nb + (nf - 1) + nd;
 
-init_state = initialize_method_state(method_cfg, r, c, na, nb, nf, nd, lambda_g, n);
+init_state = initialize_method_state(method_cfg, r, c, na, nb, lambda_g, n);
 
 alpha_hat = init_state.alpha_hat;
 e_hat = init_state.e_hat;
-nu_hat = 1e-6 * ones(lambda_g, 1);
+nu_hat = 1e-6 * ones(lambda_g, 1);  % no need to initialize this
 theta_hat = init_state.theta_hat;
 
 theta_hist = zeros(n, K_max);
@@ -350,7 +350,7 @@ direction = gradient ./ (diag_H);
 theta_new = theta_hat + eta * direction;
 end
 
-function init_state = initialize_method_state(method_cfg, r, c, na, nb, nf, nd, lambda_g, n)
+function init_state = initialize_method_state(method_cfg, r, c, na, nb, lambda_g, n)
 alpha_hat = 1e-6 * ones(lambda_g, 1);
 e_hat = 1e-6 * ones(lambda_g, 1);
 theta_hat = 1e-6 * ones(n, 1);
