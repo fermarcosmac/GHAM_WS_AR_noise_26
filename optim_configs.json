@@ -1,21 +1,45 @@
-    {
+{
   "methods": {
     "WS_GGI": {
-      "step_scale": 1.5
+      "step_scale": 1.5,
+      "initialization": {
+        "mode": "physical",
+        "linear_init_a": [0.0, 0.0],
+        "linear_init_b": [1.0, 0.0],
+        "e_init_mode": "output_residual",
+        "theta_init": 1e-6
+      }
     },
     "RGLS": {
-      "forgetting_factor": 0.995,
-      "p0_scale": 1000.0,
       "stability_projection": true,
       "stability_radius": 0.98,
       "na": 2,
       "nb": 2,
       "nf": 2,
-      "nd": 1
+      "nd": 1,
+      "initialization": {
+        "mode": "physical",
+        "linear_init_a": [0.0, 0.0],
+        "linear_init_b": [1.0, 0.0],
+        "e_init_mode": "output_residual",
+        "theta_init": 1e-6
+      },
+      "first_iter_regularization": {
+        "enabled": true,
+        "lambda": 1e-3
+      }
     },
     "WS_GNI": {
       "step_size": 1.0,
-      "notes": "Placeholder. Add Newton-type theta update rule in method_parameter_update()."
+      "hessian_regularization": 1e-8,
+      "initialization": {
+        "mode": "physical",
+        "linear_init_a": [0.0, 0.0],
+        "linear_init_b": [1.0, 0.0],
+        "e_init_mode": "output_residual",
+        "theta_init": 1e-6
+      },
+      "notes": "Newton-style update using Hessian H = Phi' * Phi."
     },
     "WS_GGHAM_1": {
       "eta": 1.0,

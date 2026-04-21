@@ -42,7 +42,7 @@ param_labels = build_plot_labels(na, nb, nf, nd);
 
 %% 2. Shared experiment settings
 lambda_g = 1000;
-K_max = 240;
+K_max = 70;
 conv_threshold = 1e-8;
 sigma_nu = 0.10;
 burn_in = 100;
@@ -120,16 +120,17 @@ fprintf('\nDone. All figures generated.\n');
 function result = run_identification_method(method_name, method_cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold)
 n = na + nb + (nf - 1) + nd;
 
-alpha_hat = 1e-6 * ones(lambda_g, 1);
-e_hat = 1e-6 * ones(lambda_g, 1);
-nu_hat = 1e-6 * ones(lambda_g, 1);      % unnecessary to initialize
-theta_hat = 1e-6 * ones(n, 1);
+init_state = initialize_method_state(method_cfg, r, c, na, nb, nf, nd, lambda_g, n);
+
+alpha_hat = init_state.alpha_hat;
+e_hat = init_state.e_hat;
+nu_hat = 1e-6 * ones(lambda_g, 1);
+theta_hat = init_state.theta_hat;
 
 theta_hist = zeros(n, K_max);
 param_err = NaN(K_max, 1);
 rel_change = NaN(K_max, 1);
 RMSE_hist = NaN(K_max, 1);
-MAE_hist = NaN(K_max, 1);
 iter_time = NaN(K_max, 1);
 cum_time = NaN(K_max, 1);
 
@@ -137,11 +138,21 @@ status = 'ok';
 status_msg = '';
 iter_count = K_max;
 
-for k = 1:K_max
+% Record common pre-update metrics so all methods start from iteration 0.
+theta_hist(:, 1) = theta_hat;
+param_err(1) = norm(theta_hat - theta_true) / norm(theta_true) * 100;
+c_sim_0 = simulate_wiener(r, nu, theta_hat, na, nb, nf, nd, lambda_g);
+res_0 = c - c_sim_0;
+RMSE_hist(1) = sqrt(mean(res_0.^2));
+rel_change(1) = 0;
+iter_time(1) = 0;
+cum_time(1) = 0;
+
+for k = 2:K_max
     t_iter = tic;
 
     Phi_hat = build_state_matrix(alpha_hat, e_hat, r, na, nb, nf, nd);
-    [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat);
+    [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, k - 1);
 
     if strcmp(aux_state.status, 'not_implemented')
         status = 'skipped';
@@ -174,24 +185,20 @@ for k = 1:K_max
     c_sim = simulate_wiener(r, nu, theta_hat, na, nb, nf, nd, lambda_g);
     res = c - c_sim;
     RMSE_hist(k) = sqrt(mean(res.^2));
-    MAE_hist(k) = mean(abs(res));
 
     iter_time(k) = toc(t_iter);
-    if k == 1
-        cum_time(k) = iter_time(k);
-    else
-        cum_time(k) = cum_time(k - 1) + iter_time(k);
-    end
+    cum_time(k) = cum_time(k - 1) + iter_time(k);
 
-    if ismember(k, [5 10 15 30 50 70 100 240]) || k == K_max
-        fprintf('%-6d  ', k);
+    iter_num = k - 1;
+    if ismember(iter_num, [5 10 15 30 50 70 100 240]) || iter_num == (K_max - 1)
+        fprintf('%-6d  ', iter_num);
         fprintf('%-10.5f  ', theta_hat);
         fprintf('%-10.5f  %-10.5f\n', param_err(k), cum_time(k));
     end
 
-    if k > 1 && rel_change(k) < conv_threshold
+    if rel_change(k) < conv_threshold
         iter_count = k;
-        fprintf('*** %s converged at iteration %d ***\n', method_name, k);
+        fprintf('*** %s converged at iteration %d ***\n', method_name, iter_num);
         break;
     end
 end
@@ -201,7 +208,6 @@ if strcmp(status, 'ok')
     param_err = param_err(1:iter_count);
     rel_change = rel_change(1:iter_count);
     RMSE_hist = RMSE_hist(1:iter_count);
-    MAE_hist = MAE_hist(1:iter_count);
     iter_time = iter_time(1:iter_count);
     cum_time = cum_time(1:iter_count);
     final_err = param_err(end);
@@ -211,7 +217,6 @@ else
     param_err = zeros(0, 1);
     rel_change = zeros(0, 1);
     RMSE_hist = zeros(0, 1);
-    MAE_hist = zeros(0, 1);
     iter_time = zeros(0, 1);
     cum_time = zeros(0, 1);
     final_err = NaN;
@@ -232,7 +237,6 @@ result = struct( ...
     'param_err', param_err, ...
     'rel_change', rel_change, ...
     'RMSE_hist', RMSE_hist, ...
-    'MAE_hist', MAE_hist, ...
     'iter_time', iter_time, ...
     'cum_time', cum_time, ...
     'final_err', final_err, ...
@@ -240,7 +244,7 @@ result = struct( ...
     'iterations', iter_count);
 end
 
-function [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat)
+function [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, iter_idx)
 theta_new = theta_hat;
 aux_state = struct('status', 'ok', 'message', '');
 
@@ -253,30 +257,149 @@ switch upper(method_name)
         theta_new = theta_hat + delta * (Phi_hat' * (c - Phi_hat * theta_hat));
 
     case 'RGLS'
-        required_fields = {'forgetting_factor', 'p0_scale'};
-        assert_config_fields(method_cfg, required_fields, method_name);
+        theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg, iter_idx);
+        theta_new = project_stable_theta(theta_ls, method_cfg);
 
-        lambda_rls = method_cfg.forgetting_factor;
-        P = method_cfg.p0_scale * eye(size(Phi_hat, 2));
-        theta_rls = theta_hat;
-        for t = 1:size(Phi_hat, 1)
-            phi_t = Phi_hat(t, :).';
-            gain_denom = lambda_rls + phi_t' * P * phi_t;
-            gain_denom = max(real(gain_denom), eps);
-            K_t = (P * phi_t) / gain_denom;
-            theta_rls = theta_rls + K_t * (c(t) - phi_t' * theta_rls);
-            P = (P - K_t * phi_t' * P) / lambda_rls;
-            P = 0.5 * (P + P.');
-        end
-        theta_new = project_stable_theta(theta_rls, method_cfg);
+    case 'WS-GNI'
+        theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg);
 
-    case {'WS-GNI', 'WS-GGHAM-1', 'WS-GGHAM-2', 'WS-LGHAM-1', 'WS-LGHAM-2', 'WS-LGHAM-3'}
+    case {'WS-GGHAM-1', 'WS-GGHAM-2', 'WS-LGHAM-1', 'WS-LGHAM-2', 'WS-LGHAM-3'}
         aux_state.status = 'not_implemented';
         aux_state.message = sprintf('%s placeholder selected. Add its theta-update rule in method_parameter_update().', method_name);
 
     otherwise
         aux_state.status = 'not_implemented';
         aux_state.message = sprintf('Unknown method "%s". Add its config and update rule before running it.', method_name);
+end
+end
+
+function theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg)
+step_size = 1.0;
+if isfield(method_cfg, 'step_size')
+    step_size = method_cfg.step_size;
+end
+
+lambda_reg = 0;
+if isfield(method_cfg, 'hessian_regularization')
+    lambda_reg = method_cfg.hessian_regularization;
+end
+
+residual = c - Phi_hat * theta_hat;
+gradient = Phi_hat.' * residual;
+H = Phi_hat.' * Phi_hat;
+
+if lambda_reg > 0
+    H = H + lambda_reg * eye(size(H));
+end
+
+if rcond(H) < 1e-12
+    direction = pinv(H) * gradient;
+else
+    direction = H \ gradient;
+end
+
+theta_new = theta_hat + step_size * direction;
+end
+
+function init_state = initialize_method_state(method_cfg, r, c, na, nb, nf, nd, lambda_g, n)
+alpha_hat = 1e-6 * ones(lambda_g, 1);
+e_hat = 1e-6 * ones(lambda_g, 1);
+theta_hat = 1e-6 * ones(n, 1);
+
+if ~isfield(method_cfg, 'initialization')
+    init_state = struct('alpha_hat', alpha_hat, 'e_hat', e_hat, 'theta_hat', theta_hat);
+    return;
+end
+
+init_cfg = method_cfg.initialization;
+
+if isfield(init_cfg, 'theta_init')
+    theta_init = init_cfg.theta_init;
+    if isscalar(theta_init)
+        theta_hat = theta_init * ones(n, 1);
+    else
+        theta_hat = theta_init(:);
+        assert(numel(theta_hat) == n, 'theta_init must have length n.');
+    end
+end
+
+if isfield(init_cfg, 'mode') && strcmpi(init_cfg.mode, 'physical')
+    a0 = zeros(na, 1);
+    b0 = zeros(nb, 1);
+
+    if isfield(init_cfg, 'linear_init_a')
+        a0 = init_cfg.linear_init_a(:);
+        assert(numel(a0) == na, 'linear_init_a must have length na.');
+    end
+    if isfield(init_cfg, 'linear_init_b')
+        b0 = init_cfg.linear_init_b(:);
+        assert(numel(b0) == nb, 'linear_init_b must have length nb.');
+    elseif nb >= 1
+        b0(1) = 1;
+    end
+
+    den_lin_0 = [1; a0];
+    num_lin_0 = [0; b0];
+    alpha_hat = filter(num_lin_0.', den_lin_0.', r);
+    alpha_hat = alpha_hat(:);
+
+    e_mode = 'output_residual';
+    if isfield(init_cfg, 'e_init_mode')
+        e_mode = init_cfg.e_init_mode;
+    end
+
+    switch lower(e_mode)
+        case 'output_residual'
+            e_hat = c - alpha_hat;
+        case 'zeros'
+            e_hat = zeros(lambda_g, 1);
+        otherwise
+            error('Unknown e_init_mode "%s".', e_mode);
+    end
+else
+    if isfield(init_cfg, 'alpha_init')
+        alpha_init = init_cfg.alpha_init;
+        if isscalar(alpha_init)
+            alpha_hat = alpha_init * ones(lambda_g, 1);
+        else
+            alpha_hat = alpha_init(:);
+            assert(numel(alpha_hat) == lambda_g, 'alpha_init must have length lambda_g.');
+        end
+    end
+
+    if isfield(init_cfg, 'e_init')
+        e_init = init_cfg.e_init;
+        if isscalar(e_init)
+            e_hat = e_init * ones(lambda_g, 1);
+        else
+            e_hat = e_init(:);
+            assert(numel(e_hat) == lambda_g, 'e_init must have length lambda_g.');
+        end
+    end
+end
+
+init_state = struct('alpha_hat', alpha_hat, 'e_hat', e_hat, 'theta_hat', theta_hat);
+end
+
+function theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg, iter_idx)
+use_reg = false;
+lambda_reg = 0;
+
+if iter_idx == 1 && isfield(method_cfg, 'first_iter_regularization')
+    reg_cfg = method_cfg.first_iter_regularization;
+    if isfield(reg_cfg, 'enabled') && reg_cfg.enabled
+        use_reg = true;
+        if isfield(reg_cfg, 'lambda')
+            lambda_reg = reg_cfg.lambda;
+        end
+    end
+end
+
+if use_reg
+    ncols = size(Phi_hat, 2);
+    theta_ls = (Phi_hat.' * Phi_hat + lambda_reg * eye(ncols)) \ (Phi_hat.' * c);
+else
+    theta_ls = Phi_hat \ c;
 end
 end
 
@@ -422,7 +545,8 @@ figure('Name', 'Method Comparison Metrics', 'Color', 'w', 'Position', [80 80 120
 subplot(2, 2, 1); hold on;
 for j = 1:numel(valid_idx)
     idx = valid_idx(j);
-    plot(1:results(idx).iterations, results(idx).param_err, 'LineWidth', 1.6, ...
+    iter_axis = 0:(results(idx).iterations - 1);
+    plot(iter_axis, results(idx).param_err, 'LineWidth', 1.6, ...
         'Color', colors(j, :), 'DisplayName', results(idx).name);
 end
 grid on; xlabel('Iteration'); ylabel('err (%)');
@@ -440,7 +564,8 @@ title('Parameter Error vs Compute Time'); legend('Location', 'best');
 subplot(2, 2, 3); hold on;
 for j = 1:numel(valid_idx)
     idx = valid_idx(j);
-    plot(1:results(idx).iterations, results(idx).RMSE_hist, 'LineWidth', 1.6, ...
+    iter_axis = 0:(results(idx).iterations - 1);
+    plot(iter_axis, results(idx).RMSE_hist, 'LineWidth', 1.6, ...
         'Color', colors(j, :), 'DisplayName', results(idx).name);
 end
 grid on; xlabel('Iteration'); ylabel('RMSE');
@@ -456,25 +581,6 @@ grid on; xlabel('Compute time (s)'); ylabel('RMSE');
 title('RMSE vs Compute Time'); legend('Location', 'best');
 
 sgtitle('Wiener System Identification - Method Comparison', 'FontSize', 13, 'FontWeight', 'bold');
-
-figure('Name', 'MAE Comparison', 'Color', 'w', 'Position', [120 120 1200 500]);
-subplot(1, 2, 1); hold on;
-for j = 1:numel(valid_idx)
-    idx = valid_idx(j);
-    plot(1:results(idx).iterations, results(idx).MAE_hist, 'LineWidth', 1.6, ...
-        'Color', colors(j, :), 'DisplayName', results(idx).name);
-end
-grid on; xlabel('Iteration'); ylabel('MAE');
-title('MAE vs Iteration'); legend('Location', 'best');
-
-subplot(1, 2, 2); hold on;
-for j = 1:numel(valid_idx)
-    idx = valid_idx(j);
-    plot(results(idx).cum_time, results(idx).MAE_hist, 'LineWidth', 1.6, ...
-        'Color', colors(j, :), 'DisplayName', results(idx).name);
-end
-grid on; xlabel('Compute time (s)'); ylabel('MAE');
-title('MAE vs Compute Time'); legend('Location', 'best');
 end
 
 function plot_parameter_trajectories(results, theta_true, param_labels)
@@ -491,7 +597,8 @@ for i = 1:n
     subplot(ceil(n / 3), 3, i); hold on;
     for j = 1:numel(valid_idx)
         idx = valid_idx(j);
-        plot(1:results(idx).iterations, results(idx).theta_hist(i, :), ...
+        iter_axis = 0:(results(idx).iterations - 1);
+        plot(iter_axis, results(idx).theta_hist(i, :), ...
             'LineWidth', 1.4, 'Color', colors(j, :), 'DisplayName', results(idx).name);
     end
     yline(theta_true(i), 'k--', 'LineWidth', 1.1, 'DisplayName', 'True');
