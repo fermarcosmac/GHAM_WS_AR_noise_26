@@ -1,294 +1,274 @@
-%% WS-GGI Algorithm — Wiener Nonlinear System with AR Noise (Example 1)
+%% WS-GGI Algorithm - Wiener Nonlinear System with AR Noise (Example 1)
 %
 % Reference: Lv et al., "Parameter estimation of Wiener nonlinear systems
-%   based on gradient iteration theory and zebra optimization algorithm",
-%   Journal of the Franklin Institute 363 (2026) 108499.
+% based on gradient iteration theory and zebra optimization algorithm",
+% Journal of the Franklin Institute 363 (2026) 108499.
 %
 % System structure (Fig. 1 of the paper):
-%   r(t) --> G(sigma) --> alpha(t) --> F(·) --> beta(t) --[+]--> c(t)
-%                                                          ^
-%                                          nu(t) --> w(sigma) --> e(t)
+%   r(t) --> G(z) --> alpha(t) --> F(.) --> beta(t) --[+]--> c(t)
+%                                                        ^
+%                                        nu(t) --> w(z) --> e(t)
 %
 % Example 1 true parameters:
 %   alpha(t) = (0.23*z^-1 + 0.98*z^-2) / (1 - 0.31*z^-1 - 0.27*z^-2) * r(t)
 %   beta(t)  = alpha(t) + 0.32*alpha(t)^2
 %   e(t)     = 1/(1 - 0.40*z^-1) * nu(t)
-%   theta    = [a1,a2, b1,b2, f2, d1] = [-0.31,-0.27, 0.23,0.98, 0.32,-0.40]
+%   theta    = [a1,a2,b1,b2,f2,d1] = [-0.31,-0.27,0.23,0.98,0.32,-0.40]
 
 clear; clc; close all;
-rng(42);  % reproducibility
+rng(42);
 
-%% ── 1. True system parameters ─────────────────────────────────────────────
-na = 2; nb = 2; nf = 2; nd = 1;
-n  = na + nb + (nf-1) + nd;     % parameter vector dimension = 6  (f1=1 is known, not estimated)
+%% 1. True system parameters
+na = 2;
+nb = 2;
+nf = 2;
+nd = 1;
+n  = na + nb + (nf - 1) + nd;
 
-a_true = [-0.31; -0.27];    % denominator of G(sigma)
-b_true = [ 0.23;  0.98];    % numerator   of G(sigma)
-f_true =  0.32;             % nonlinear coefficient (f1=1 fixed)
-d_true  = -0.40;            % AR noise denominator
+a_true = [-0.31; -0.27];
+b_true = [ 0.23;  0.98];
+f_true = 0.32;
+d_true = -0.40;
 
-theta_true = [a_true; b_true; f_true; d_true];   % 6-vector
+theta_true = [a_true; b_true; f_true; d_true];
 
-%% ── 2. Algorithm hyper-parameters ─────────────────────────────────────────
-lambda_g = 1000;            % data length  (paper uses 1000)
-K_max    = 240;             % maximum iterations
-conv_threshold = 1e-8;      % convergence threshold on relative change
-sigma_nu = 0.10;            % noise standard deviation  (variance = 0.1^2)
+%% 2. Algorithm hyper-parameters
+lambda_g = 1000;
+K_max = 240;
+conv_threshold = 1e-8;
+sigma_nu = 0.10;
+norm_step_size = 1.15; % should be in the range (0,2]
 
-%% ── 3. Generate input / noise / true output ────────────────────────────────
-N_total  = lambda_g + 100;          % extra samples for transient burn-in
-r_full   = randn(N_total, 1);       % persistent excitation (zero-mean, unit-var)
-nu_full  = sigma_nu * randn(N_total, 1);
+%% 3. Generate input / noise / true output
+burn_in = 100;
+N_total = lambda_g + burn_in;
+r_full = randn(N_total, 1);
+nu_full = sigma_nu * randn(N_total, 1);
 
-poly_coeffs = flipud([0 ; 1; f_true(:)]); % polynomial coeffs in descending order and with DC (zero in this case)
+poly_coeffs = [flipud(f_true(:)); 1; 0];
 
-% Linear subsystem
-den_lin = [1; a_true(:)];        % column -> ensure vector
-num_lin = [0; b_true(:)];        % shift so that b_true(1) multiplies r(t-1), etc.
-alpha_full = filter(num_lin.', den_lin.', r_full);  % transpose to row vectors for filter
+den_lin = [1; a_true(:)];
+num_lin = [0; b_true(:)];
+alpha_full = filter(num_lin.', den_lin.', r_full);
 
-% AR noise
-den_ar = [1; -d_true(:)];        % e recursion denominator
+den_ar = [1; d_true(:)];
 e_full = filter(1, den_ar.', nu_full);
 
-% Static nonlinearity
-beta_vec = polyval(poly_coeffs, alpha_full);
+beta_full = polyval(poly_coeffs.', alpha_full);
+c_full = beta_full + e_full;
 
-% Output
-c_full = beta_vec + e_full;
+keep_idx = (burn_in + 1):(burn_in + lambda_g);
+r = r_full(keep_idx);
+nu = nu_full(keep_idx);
+c = c_full(keep_idx);
 
-% Discard burn-in, keep exactly lambda_g samples
-r  = r_full(101:100+lambda_g);
-nu = nu_full(101:100+lambda_g);
-c  = c_full(101:100+lambda_g);    % observation vector C(lambda_g)
-
-%% ── 4. WS-GGI Algorithm ────────────────────────────────────────────────────
-%
-%  Each outer iteration k:
-%   (a) Build Phi_hat^(k) from alpha_hat^(k-1) and e_hat^(k-1)   Eq.(23),(27)
-%   (b) delta^(k) = 1.5 / ||Phi_hat^(k)||_F^2                    Eq.(30)
-%   (c) theta_hat^(k) = theta_hat^(k-1)
-%                     + delta^(k) * Phi_hat^(k)' * [C - Phi_hat^(k)*theta_hat^(k-1)]   Eq.(28)
-%   (d) nu_hat^(k)(t) = c(t) - phi_hat^(k)(t)' * theta_hat^(k)   Eq.(24)
-%   (e) e_hat^(k)(t)  = -d1_hat*e_hat^(k)(t-1) + nu_hat^(k)(t)   Eq.(25)
-%   (f) alpha_hat^(k)(t) = -sum a_hat*alpha_hat^(k)(t-i)
-%                        + sum b_hat*r(t-i)                       Eq.(26)
-
-% ── Initialise ────────────────────────────────────────────────────────────
+%% 4. WS-GGI Algorithm
 alpha_hat = 1e-6 * ones(lambda_g, 1);
-e_hat     = 1e-6 * ones(lambda_g, 1);
-nu_hat    = 1e-6 * ones(lambda_g, 1);
+e_hat = 1e-6 * ones(lambda_g, 1);
+nu_hat = 1e-6 * ones(lambda_g, 1);
 theta_hat = 1e-6 * ones(n, 1);
 
-% Storage
-param_err  = zeros(K_max, 1);   % err(%) = ||theta_hat - theta_true|| / ||theta_true|| * 100
-rel_change = zeros(K_max, 1);   % convergence check
+param_err = zeros(K_max, 1);
+rel_change = zeros(K_max, 1);
 theta_hist = zeros(n, K_max);
-RMSE_hist  = zeros(K_max, 1);
-MAE_hist   = zeros(K_max, 1);
+RMSE_hist = zeros(K_max, 1);
+MAE_hist = zeros(K_max, 1);
 
-fprintf('%-6s  %-10s  %-10s  %-10s  %-10s  %-10s  %-10s  %-10s\n', ...
-        'Iter','a1','a2','b1','b2','f2','d1','err(%)');
-fprintf('%s\n', repmat('-',1,80));
+param_names = build_param_names(na, nb, nf, nd);
+fprintf('Iter    ');
+fprintf('%-10s  ', param_names{:});
+fprintf('%-10s\n', 'err(%)');
+fprintf('%s\n', repmat('-', 1, 12 * (n + 2)));
 
 for k = 1:K_max
 
     %% (a) Build state matrix Phi_hat^(k)  [lambda_g x n]
-    %      phi_hat^(k)(t) = [-alpha^(k-1)(t-1), -alpha^(k-1)(t-2),
-    %                         r(t-1), r(t-2),
-    %                         (alpha^(k-1)(t))^2,
-    %                        -e^(k-1)(t-1)]
-    Phi_hat = zeros(lambda_g, n);
-
-    for t = 1:lambda_g
-        alpha_tm1 = (t > 1) * alpha_hat(t-1); % ERROR: it tries to save samples from before the signal starts!
-        alpha_tm2 = (t > 2) * alpha_hat(t-2);
-        r_tm1     = (t > 1) * r(t-1);
-        r_tm2     = (t > 2) * r(t-2);
-        alpha_t_sq = alpha_hat(t)^2;
-        e_tm1     = (t > 1) * e_hat(t-1);
-
-        Phi_hat(t, :) = [-alpha_tm1, -alpha_tm2, ...
-                          r_tm1,      r_tm2,      ...
-                          alpha_t_sq,             ...
-                         -e_tm1];
-    end
+    % Regressor structure:
+    %   phi_hat(t) = [-alpha(t-1..t-na), r(t-1..t-nb), alpha(t).^2..alpha(t).^nf, -e(t-1..t-nd)]
+    %
+    % Unavailable lagged samples are zero-padded. This keeps Phi_hat valid
+    % after burn-in removal because no access is made outside the retained
+    % signal bounds.
+    Phi_hat = build_state_matrix(alpha_hat, e_hat, r, na, nb, nf, nd);
 
     %% (b) Iteration step size  Eq.(30)
-    delta = 1.5 / norm(Phi_hat, 'fro')^2;
+    delta = norm_step_size / max(norm(Phi_hat, 'fro')^2, eps);
 
     %% (c) Update parameter vector  Eq.(28)
     theta_new = theta_hat + delta * (Phi_hat' * (c - Phi_hat * theta_hat));
 
     %% Extract parameter estimates from theta_new
-    a_hat_v  = theta_new(1:na);               % [a1; a2]
-    b_hat_v  = theta_new(na+1 : na+nb);       % [b1; b2]
-    f2_hat_v = theta_new(na+nb+1);            % f2
-    d_hat_v  = theta_new(na+nb+2 : end);      % [d1]
+    a_hat_v = theta_new(1:na);
+    b_hat_v = theta_new(na + 1:na + nb);
+    f_hat_v = theta_new(na + nb + 1:na + nb + (nf - 1));
+    d_hat_v = theta_new(na + nb + (nf - 1) + 1:end);
 
     %% (d) Update nu_hat^(k)  Eq.(24)
     nu_hat = c - Phi_hat * theta_new;
 
-    %% (e) Update e_hat^(k)  Eq.(25):  e(t) = -d1*e(t-1) + nu(t)
-    e_hat_new = zeros(lambda_g, 1);
-    for t = 1:lambda_g
-        acc = nu_hat(t);
-        for i = 1:nd
-            if t > i
-                acc = acc - d_hat_v(i) * e_hat_new(t-i);
-            end
-        end
-        e_hat_new(t) = acc;
-    end
-    e_hat = e_hat_new;
+    %% (e) Update e_hat^(k)
+    den_ar_hat = [1; d_hat_v(:)];
+    e_hat = filter(1, den_ar_hat.', nu_hat);
+    e_hat = e_hat(:);
 
-    %% (f) Update alpha_hat^(k)  Eq.(26)
-    alpha_hat_new = zeros(lambda_g, 1);
-    for t = 1:lambda_g
-        acc = 0;
-        for i = 1:na
-            if t > i; acc = acc - a_hat_v(i) * alpha_hat_new(t-i); end
-        end
-        for i = 1:nb
-            if t > i; acc = acc + b_hat_v(i) * r(t-i); end
-        end
-        alpha_hat_new(t) = acc;
-    end
-    alpha_hat = alpha_hat_new;
+    %% (f) Update alpha_hat^(k)
+    den_lin_hat = [1; a_hat_v(:)];
+    num_lin_hat = [0; b_hat_v(:)];
+    alpha_hat = filter(num_lin_hat.', den_lin_hat.', r);
+    alpha_hat = alpha_hat(:);
 
     %% Convergence & metrics
     rel_change(k) = norm(theta_new - theta_hat) / (norm(theta_hat) + 1e-15);
-    theta_hat     = theta_new;
-    theta_hist(:,k) = theta_hat;
+    theta_hat = theta_new;
+    theta_hist(:, k) = theta_hat;
 
     param_err(k) = norm(theta_hat - theta_true) / norm(theta_true) * 100;
 
-    % Simulate output with current parameters for RMSE/MAE
-    c_sim = simulate_wiener(r, nu, theta_hat, na, nb, nd, lambda_g);
-    res   = c - c_sim;
+    c_sim = simulate_wiener(r, nu, theta_hat, na, nb, nf, nd, lambda_g);
+    res = c - c_sim;
     RMSE_hist(k) = sqrt(mean(res.^2));
-    MAE_hist(k)  = mean(abs(res));
+    MAE_hist(k) = mean(abs(res));
 
-    % Print at selected iterations (matching Table 2 in paper)
     if ismember(k, [5 10 15 30 50 70 100 240]) || k == K_max
-        fprintf('%-6d  %-10.5f  %-10.5f  %-10.5f  %-10.5f  %-10.5f  %-10.5f  %-10.5f\n', ...
-                k, theta_hat(1), theta_hat(2), theta_hat(3), ...
-                   theta_hat(4), theta_hat(5), theta_hat(6), param_err(k));
+        fprintf('%-6d  ', k);
+        fprintf('%-10.5f  ', theta_hat);
+        fprintf('%-10.5f\n', param_err(k));
     end
 
-    % Stop early if converged
     if k > 1 && rel_change(k) < conv_threshold
-        fprintf('\n  *** Converged at iteration %d ***\n', k);
-        K_max = k; break;
+        fprintf('\n*** Converged at iteration %d ***\n', k);
+        K_max = k;
+        break;
     end
 end
 
-%% ── 5. Final results table ─────────────────────────────────────────────────
-fprintf('\n%s\n', repmat('=',1,60));
-fprintf('  FINAL PARAMETER ESTIMATES vs. TRUE VALUES\n');
-fprintf('%s\n', repmat('=',1,60));
-names = {'a1','a2','b1','b2','f2','d1'};
-fprintf('  %-8s  %-12s  %-12s\n','Param','Estimated','True');
-fprintf('%s\n', repmat('-',1,40));
+%% 5. Final results table
+fprintf('\n%s\n', repmat('=', 1, 60));
+fprintf('FINAL PARAMETER ESTIMATES vs. TRUE VALUES\n');
+fprintf('%s\n', repmat('=', 1, 60));
+fprintf('  %-8s  %-12s  %-12s\n', 'Param', 'Estimated', 'True');
+fprintf('%s\n', repmat('-', 1, 40));
 for i = 1:n
-    fprintf('  %-8s  %-12.5f  %-12.5f\n', names{i}, theta_hat(i), theta_true(i));
+    fprintf('  %-8s  %-12.5f  %-12.5f\n', param_names{i}, theta_hat(i), theta_true(i));
 end
-fprintf('%s\n', repmat('-',1,40));
+fprintf('%s\n', repmat('-', 1, 40));
 fprintf('  Final err(%%) = %.5f\n', param_err(K_max));
 
-%% ── 6. Plots ───────────────────────────────────────────────────────────────
-c_sim_final = simulate_wiener(r, nu, theta_hat, na, nb, nd, lambda_g);
+%% 6. Plots
+c_sim_final = simulate_wiener(r, nu, theta_hat, na, nb, nf, nd, lambda_g);
 
-figure('Name','WS-GGI Results','Color','w','Position',[100 80 1000 750]);
+figure('Name', 'WS-GGI Results', 'Color', 'w', 'Position', [100 80 1000 750]);
 
-% Plot 1: Observed vs Simulated Output
-subplot(2,2,[1 2]);
-plot(1:lambda_g, c, 'b-', 'LineWidth', 0.8, 'DisplayName','Observed Output'); hold on;
-plot(1:lambda_g, c_sim_final, 'r.', 'MarkerSize', 4, 'DisplayName','Simulated Output / WS-GGI');
-legend('Location','best'); grid on;
+subplot(2, 2, [1 2]);
+plot(1:lambda_g, c, 'b-', 'LineWidth', 0.8, 'DisplayName', 'Observed Output'); hold on;
+plot(1:lambda_g, c_sim_final, 'r.', 'MarkerSize', 4, 'DisplayName', 'Simulated Output / WS-GGI');
+legend('Location', 'best'); grid on;
 xlabel('Time'); ylabel('c(t)');
 title('Observation and Simulation Output of WS-GGI');
 xlim([1 lambda_g]);
 
-% Plot 2: Parameter error convergence
-subplot(2,2,3);
+subplot(2, 2, 3);
 semilogy(1:K_max, param_err(1:K_max), 'b-', 'LineWidth', 1.8);
 grid on; xlabel('Iteration'); ylabel('err (%)');
 title('Parameter Error Convergence');
 hold on;
 marks = [5 10 15 30 50 70 100 240];
 marks = marks(marks <= K_max);
-plot(marks, param_err(marks), 'ro', 'MarkerFaceColor','r', 'MarkerSize', 5);
+plot(marks, param_err(marks), 'ro', 'MarkerFaceColor', 'r', 'MarkerSize', 5);
 
-% Plot 3: RMSE / MAE
-subplot(2,2,4);
-plot(1:K_max, RMSE_hist(1:K_max), 'b-', 'LineWidth',1.5,'DisplayName','RMSE'); hold on;
-plot(1:K_max, MAE_hist(1:K_max),  'r--','LineWidth',1.5,'DisplayName','MAE');
+subplot(2, 2, 4);
+plot(1:K_max, RMSE_hist(1:K_max), 'b-', 'LineWidth', 1.5, 'DisplayName', 'RMSE'); hold on;
+plot(1:K_max, MAE_hist(1:K_max), 'r--', 'LineWidth', 1.5, 'DisplayName', 'MAE');
 grid on; legend; xlabel('Iteration'); ylabel('Error');
 title('RMSE and MAE vs Iteration');
 
-sgtitle('WS-GGI: Wiener System with AR Noise — Example 1', 'FontSize',13,'FontWeight','bold');
+sgtitle('WS-GGI: Wiener System with AR Noise - Example 1', 'FontSize', 13, 'FontWeight', 'bold');
 
-%% ── 7. Parameter trajectory plot ──────────────────────────────────────────
-figure('Name','Parameter Trajectories','Color','w','Position',[150 100 900 550]);
-param_labels = {'a_1','a_2','b_1','b_2','f_2','d_1'};
+%% 7. Parameter trajectory plot
+figure('Name', 'Parameter Trajectories', 'Color', 'w', 'Position', [150 100 900 550]);
+param_labels = build_plot_labels(na, nb, nf, nd);
 colors = lines(n);
 for i = 1:n
-    subplot(2,3,i);
-    plot(1:K_max, theta_hist(i,1:K_max), 'Color', colors(i,:), 'LineWidth', 1.5); hold on;
+    subplot(ceil(n / 3), 3, i);
+    plot(1:K_max, theta_hist(i, 1:K_max), 'Color', colors(i, :), 'LineWidth', 1.5); hold on;
     yline(theta_true(i), 'k--', 'LineWidth', 1.2);
     grid on;
-    xlabel('Iteration'); ylabel(['$\hat{',param_labels{i},'}$'], 'Interpreter','latex');
-    title(['Parameter ',param_labels{i}]);
-    legend('Estimate','True','Location','best');
+    xlabel('Iteration');
+    ylabel(['$\hat{', param_labels{i}, '}$'], 'Interpreter', 'latex');
+    title(['Parameter ', param_labels{i}]);
+    legend('Estimate', 'True', 'Location', 'best');
 end
-sgtitle('Parameter Convergence Trajectories — WS-GGI','FontSize',12,'FontWeight','bold');
+sgtitle('Parameter Convergence Trajectories - WS-GGI', 'FontSize', 12, 'FontWeight', 'bold');
 
 fprintf('\nDone. All figures generated.\n');
 
 
-%% ══════════════════════════════════════════════════════════════════════════
-%%  LOCAL FUNCTION: simulate Wiener output given parameter vector
-%% ══════════════════════════════════════════════════════════════════════════
+%% Local functions
+function Phi_hat = build_state_matrix(alpha_hat, e_hat, r, na, nb, nf, nd)
+T = numel(r);
+
+alpha_lags = build_lag_matrix(alpha_hat, na);
+r_lags = build_lag_matrix(r, nb);
+e_lags = build_lag_matrix(e_hat, nd);
+
+if nf > 1
+    nonlinear_terms = zeros(T, nf - 1);
+    for p = 2:nf
+        nonlinear_terms(:, p - 1) = alpha_hat(:).^p;
+    end
+else
+    nonlinear_terms = zeros(T, 0);
+end
+
+Phi_hat = [-alpha_lags, r_lags, nonlinear_terms, -e_lags];
+end
+
+function Xlag = build_lag_matrix(x, max_lag)
+T = numel(x);
+Xlag = zeros(T, max_lag);
+x = x(:);
+
+for lag = 1:max_lag
+    Xlag((lag + 1):end, lag) = x(1:(end - lag));
+end
+end
+
+function names = build_param_names(na, nb, nf, nd)
+names = [arrayfun(@(i) sprintf('a%d', i), 1:na, 'UniformOutput', false), ...
+         arrayfun(@(i) sprintf('b%d', i), 1:nb, 'UniformOutput', false), ...
+         arrayfun(@(i) sprintf('f%d', i), 2:nf, 'UniformOutput', false), ...
+         arrayfun(@(i) sprintf('d%d', i), 1:nd, 'UniformOutput', false)];
+end
+
+function labels = build_plot_labels(na, nb, nf, nd)
+labels = [arrayfun(@(i) sprintf('a_%d', i), 1:na, 'UniformOutput', false), ...
+          arrayfun(@(i) sprintf('b_%d', i), 1:nb, 'UniformOutput', false), ...
+          arrayfun(@(i) sprintf('f_%d', i), 2:nf, 'UniformOutput', false), ...
+          arrayfun(@(i) sprintf('d_%d', i), 1:nd, 'UniformOutput', false)];
+end
+
 function c_sim = simulate_wiener(r, nu, theta, na, nb, nf, nd, T)
+expected_n = na + nb + (nf - 1) + nd;
+assert(numel(theta) == expected_n, 'theta has wrong dimension.');
 
-% ── Minimal dimension check ───────────────────────────────────────────
-assert(length(theta = na+nb+nf-1+nd))
+a_v = theta(1:na);
+b_v = theta(na + 1:na + nb);
+f_v = theta(na + nb + 1:na + nb + (nf - 1));
+d_v = theta(na + nb + (nf - 1) + 1:end);
 
-% ── Extract parameters ────────────────────────────────────────────────
-a_v  = theta(1:na);
-b_v  = theta(na+1:na+nb);
-f_v = theta(na+nb+1:na+nb+nf-1);
-d_v  = theta(na+nb+nf:end);
-
-% ── 1. Linear subsystem G(z): r → alpha ───────────────────────────────
-% Same structure as Section 3
-den_lin = [1; a_v(:)];       % denominator
-num_lin = [0; b_v(:)];       % numerator (shifted)
-
+den_lin = [1; a_v(:)];
+num_lin = [0; b_v(:)];
 alpha = filter(num_lin.', den_lin.', r);
 
-% ── 2. Static nonlinearity F(·): alpha → beta ─────────────────────────
-% Polynomial: beta = alpha + f2*alpha^2
-% polyval expects descending powers → [f2, 1, 0]
-poly_coeffs = [f_v; 1; 0];   % descending: f2*x^2 + 1*x + 0
-
+poly_coeffs = [flipud(f_v(:)); 1; 0];
 beta = polyval(poly_coeffs.', alpha);
 
-% ── 3. AR noise: nu → e ───────────────────────────────────────────────
-% e(t) = -d1*e(t-1) + nu(t)  → denominator = [1; -d_v]
-den_ar = [1; -d_v(:)];
-
+den_ar = [1; d_v(:)];
 e = filter(1, den_ar.', nu);
 
-% ── 4. Output ─────────────────────────────────────────────────────────
-c_sim = beta + e;
+c_sim = beta(:) + e(:);
 
-% Ensure column vector (robustness)
-c_sim = c_sim(:);
-
-% Optional: truncate if needed (in case inputs are longer)
-if nargin == 7
+if nargin >= 8
     c_sim = c_sim(1:T);
 end
 end
