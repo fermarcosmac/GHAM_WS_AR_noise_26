@@ -17,7 +17,7 @@ selected_methods = { ...
     'WS-GGI', ...
     'RGLS', ...
     'WS-GNI', ...
-    'WS-GGHAM-1', ...
+    'WS-GGHAM-1-dH', ...
     'WS-GGHAM-2-I', ...
     'WS-LGHAM-1', ...
     'WS-LGHAM-2', ...
@@ -257,11 +257,13 @@ switch upper(method_name)
         theta_new = theta_hat + delta * (Phi_hat' * (c - Phi_hat * theta_hat));
 
     case 'RGLS'
-        theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg, iter_idx);
-        theta_new = project_stable_theta(theta_ls, method_cfg); % can be deactivated in config file
+        theta_new = ws_rgls_update(Phi_hat, c, method_cfg);
 
     case 'WS-GNI'
         theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg);
+
+    case {'WS_GGHAM_1_DH', 'WS-GGHAM-1-DH'}
+        theta_new = ws_ggham_1_dh_update(Phi_hat, c, theta_hat, method_cfg);
 
     case 'WS-GGHAM-2-I'
         theta_new = ws_ggham_2_i_update(Phi_hat, c, theta_hat, method_cfg);
@@ -274,6 +276,11 @@ switch upper(method_name)
         aux_state.status = 'not_implemented';
         aux_state.message = sprintf('Unknown method "%s". Add its config and update rule before running it.', method_name);
 end
+end
+
+function theta_new = ws_rgls_update(Phi_hat, c, method_cfg)
+theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg);
+theta_new = project_stable_theta(theta_ls, method_cfg); % can be deactivated in config file
 end
 
 function theta_new = ws_ggham_2_i_update(Phi_hat, c, theta_hat, method_cfg)
@@ -316,6 +323,31 @@ else
 end
 
 theta_new = theta_hat + step_size * direction;
+end
+
+function theta_new = ws_ggham_1_dh_update(Phi_hat, c, theta_hat, method_cfg)
+eta = 1.0;
+if isfield(method_cfg, 'eta')
+    eta = method_cfg.eta;
+end
+
+lambda_reg = 0;
+if isfield(method_cfg, 'hessian_regularization')
+    lambda_reg = method_cfg.hessian_regularization;
+end
+
+residual = c - Phi_hat * theta_hat;
+gradient = Phi_hat.' * residual;
+
+% Diagonal Hessian approximation: diag(Phi' * Phi)
+diag_H = sum(Phi_hat.^2, 1).';
+if lambda_reg > 0
+    diag_H = diag_H + lambda_reg;
+end
+
+direction = gradient ./ (diag_H);
+
+theta_new = theta_hat + eta * direction;
 end
 
 function init_state = initialize_method_state(method_cfg, r, c, na, nb, nf, nd, lambda_g, n)
@@ -398,7 +430,7 @@ end
 init_state = struct('alpha_hat', alpha_hat, 'e_hat', e_hat, 'theta_hat', theta_hat);
 end
 
-function theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg, iter_idx)
+function theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg)
 lambda_reg = 0;
 
 if isfield(method_cfg, 'regularization')
@@ -563,38 +595,46 @@ subplot(2, 2, 1); hold on;
 for j = 1:numel(valid_idx)
     idx = valid_idx(j);
     iter_axis = 0:(results(idx).iterations - 1);
-    plot(iter_axis, results(idx).param_err, 'LineWidth', 1.6, ...
+    y_param_err = max(results(idx).param_err, eps);
+    plot(iter_axis, y_param_err, 'LineWidth', 1.6, ...
         'Color', colors(j, :), 'DisplayName', results(idx).name);
 end
-grid on; xlabel('Iteration'); ylabel('err (%)');
+set(gca, 'YScale', 'log');
+grid on; box on; xlabel('Iteration'); ylabel('err (%)');
 title('Parameter Error vs Iteration'); legend('Location', 'best');
 
 subplot(2, 2, 2); hold on;
 for j = 1:numel(valid_idx)
     idx = valid_idx(j);
-    plot(results(idx).cum_time, results(idx).param_err, 'LineWidth', 1.6, ...
+    y_param_err = max(results(idx).param_err, eps);
+    plot(results(idx).cum_time, y_param_err, 'LineWidth', 1.6, ...
         'Color', colors(j, :), 'DisplayName', results(idx).name);
 end
-grid on; xlabel('Compute time (s)'); ylabel('err (%)');
+set(gca, 'YScale', 'log');
+grid on; box on; xlabel('Compute time (s)'); ylabel('err (%)');
 title('Parameter Error vs Compute Time'); legend('Location', 'best');
 
 subplot(2, 2, 3); hold on;
 for j = 1:numel(valid_idx)
     idx = valid_idx(j);
     iter_axis = 0:(results(idx).iterations - 1);
-    plot(iter_axis, results(idx).RMSE_hist, 'LineWidth', 1.6, ...
+    y_rmse = max(results(idx).RMSE_hist, eps);
+    plot(iter_axis, y_rmse, 'LineWidth', 1.6, ...
         'Color', colors(j, :), 'DisplayName', results(idx).name);
 end
-grid on; xlabel('Iteration'); ylabel('RMSE');
+set(gca, 'YScale', 'log');
+grid on; box on; xlabel('Iteration'); ylabel('RMSE');
 title('RMSE vs Iteration'); legend('Location', 'best');
 
 subplot(2, 2, 4); hold on;
 for j = 1:numel(valid_idx)
     idx = valid_idx(j);
-    plot(results(idx).cum_time, results(idx).RMSE_hist, 'LineWidth', 1.6, ...
+    y_rmse = max(results(idx).RMSE_hist, eps);
+    plot(results(idx).cum_time, y_rmse, 'LineWidth', 1.6, ...
         'Color', colors(j, :), 'DisplayName', results(idx).name);
 end
-grid on; xlabel('Compute time (s)'); ylabel('RMSE');
+set(gca, 'YScale', 'log');
+grid on; box on; xlabel('Compute time (s)'); ylabel('RMSE');
 title('RMSE vs Compute Time'); legend('Location', 'best');
 
 sgtitle('Wiener System Identification - Method Comparison', 'FontSize', 13, 'FontWeight', 'bold');
@@ -619,7 +659,7 @@ for i = 1:n
             'LineWidth', 1.4, 'Color', colors(j, :), 'DisplayName', results(idx).name);
     end
     yline(theta_true(i), 'k--', 'LineWidth', 1.1, 'DisplayName', 'True');
-    grid on;
+    grid on; box on;
     xlabel('Iteration');
     ylabel(['$\hat{', param_labels{i}, '}$'], 'Interpreter', 'latex');
     title(['Parameter ', param_labels{i}]);

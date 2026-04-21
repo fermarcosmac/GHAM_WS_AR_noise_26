@@ -41,14 +41,15 @@
       },
       "notes": "Newton-style update using Hessian H = Phi' * Phi."
     },
-    "WS_GGHAM_1": {
-      "eta": 1.0,
+    "WS_GGHAM_1_dH": {
+      "eta": 1e0,
       "hessian_mode": "diag",
+      "hessian_regularization": 1e3,
       "order": 1,
       "notes": "Placeholder for gradient-root GHAM first-order update."
     },
     "WS_GGHAM_2_I": {
-      "eta": 1e-4,
+      "eta": 6e-5,
       "linear_operator": "identity",
       "order": 2,
       "notes": "Second-order gradient-root GHAM update for L = I (equation 24 in the notes)."
