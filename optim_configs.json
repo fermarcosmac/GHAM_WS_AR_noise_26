@@ -1,0 +1,52 @@
+    {
+  "methods": {
+    "WS_GGI": {
+      "step_scale": 1.5
+    },
+    "RGLS": {
+      "forgetting_factor": 0.995,
+      "p0_scale": 1000.0,
+      "stability_projection": true,
+      "stability_radius": 0.98,
+      "na": 2,
+      "nb": 2,
+      "nf": 2,
+      "nd": 1
+    },
+    "WS_GNI": {
+      "step_size": 1.0,
+      "notes": "Placeholder. Add Newton-type theta update rule in method_parameter_update()."
+    },
+    "WS_GGHAM_1": {
+      "eta": 1.0,
+      "hessian_mode": "diag",
+      "order": 1,
+      "notes": "Placeholder for gradient-root GHAM first-order update."
+    },
+    "WS_GGHAM_2": {
+      "eta": 1.0,
+      "linear_operator": "identity",
+      "order": 2,
+      "notes": "Placeholder for second-order gradient-root GHAM update."
+    },
+    "WS_LGHAM_1": {
+      "epsilon0": 1e-4,
+      "inverse_solver": "pinv",
+      "order": 1,
+      "notes": "Placeholder for loss-root GHAM first-order update."
+    },
+    "WS_LGHAM_2": {
+      "epsilon0": 1e-4,
+      "inverse_solver": "tikhonov",
+      "tikhonov_lambda": 1e-3,
+      "order": 2,
+      "notes": "Placeholder for loss-root GHAM second-order update."
+    },
+    "WS_LGHAM_3": {
+      "epsilon0": 1e-4,
+      "inverse_solver": "pinv",
+      "order": 3,
+      "notes": "Placeholder for loss-root GHAM third-order update."
+    }
+  }
+}
