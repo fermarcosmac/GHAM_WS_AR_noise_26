@@ -20,42 +20,42 @@ rng(42);  % reproducibility
 
 %% ── 1. True system parameters ─────────────────────────────────────────────
 na = 2; nb = 2; nf = 2; nd = 1;
-n  = na + nb + (nf-1) + nd;   % dimension = 6  (f1=1 is known, not estimated)
+n  = na + nb + (nf-1) + nd;     % parameter vector dimension = 6  (f1=1 is known, not estimated)
 
-a_true = [-0.31; -0.27];   % denominator of G(sigma)
-b_true = [ 0.23;  0.98];   % numerator   of G(sigma)
-f2_true =  0.32;            % nonlinear coefficient (f1=1 fixed)
-d_true  = [-0.40];          % AR noise denominator
+a_true = [-0.31; -0.27];    % denominator of G(sigma)
+b_true = [ 0.23;  0.98];    % numerator   of G(sigma)
+f_true =  0.32;             % nonlinear coefficient (f1=1 fixed)
+d_true  = -0.40;            % AR noise denominator
 
-theta_true = [a_true; b_true; f2_true; d_true];   % 6-vector
+theta_true = [a_true; b_true; f_true; d_true];   % 6-vector
 
 %% ── 2. Algorithm hyper-parameters ─────────────────────────────────────────
-lambda_g = 1000;   % data length  (paper uses 1000)
-K_max    = 240;    % maximum iterations
-zeta     = 1e-8;   % convergence threshold on relative change
-sigma_nu = 0.10;   % noise standard deviation  (variance = 0.1^2)
+lambda_g = 1000;            % data length  (paper uses 1000)
+K_max    = 240;             % maximum iterations
+conv_threshold = 1e-8;      % convergence threshold on relative change
+sigma_nu = 0.10;            % noise standard deviation  (variance = 0.1^2)
 
 %% ── 3. Generate input / noise / true output ────────────────────────────────
 N_total  = lambda_g + 100;          % extra samples for transient burn-in
 r_full   = randn(N_total, 1);       % persistent excitation (zero-mean, unit-var)
 nu_full  = sigma_nu * randn(N_total, 1);
 
-alpha_full = zeros(N_total, 1);
-e_full     = zeros(N_total, 1);
-c_full     = zeros(N_total, 1);
+poly_coeffs = flipud([0 ; 1; f_true(:)]); % polynomial coeffs in descending order and with DC (zero in this case)
 
-for t = 3:N_total
-    % Linear subsystem  Eq.(10): alpha(t) = -sum a_i*alpha(t-i) + sum b_i*r(t-i)
-    alpha_full(t) = -a_true(1)*alpha_full(t-1) - a_true(2)*alpha_full(t-2) ...
-                   +  b_true(1)*r_full(t-1)    +  b_true(2)*r_full(t-2);
+% Linear subsystem
+den_lin = [1; a_true(:)];        % column -> ensure vector
+num_lin = [0; b_true(:)];        % shift so that b_true(1) multiplies r(t-1), etc.
+alpha_full = filter(num_lin.', den_lin.', r_full);  % transpose to row vectors for filter
 
-    % AR noise  Eq.(11): e(t) = -d1*e(t-1) + nu(t)
-    e_full(t) = -d_true(1)*e_full(t-1) + nu_full(t);
+% AR noise
+den_ar = [1; -d_true(:)];        % e recursion denominator
+e_full = filter(1, den_ar.', nu_full);
 
-    % Output  Eq.(9):  c(t) = beta(t) + e(t)
-    beta_t      = alpha_full(t) + f2_true * alpha_full(t)^2;  % Eq.(8), f1=1
-    c_full(t)   = beta_t + e_full(t);
-end
+% Static nonlinearity
+beta_vec = polyval(poly_coeffs, alpha_full);
+
+% Output
+c_full = beta_vec + e_full;
 
 % Discard burn-in, keep exactly lambda_g samples
 r  = r_full(101:100+lambda_g);
@@ -177,7 +177,7 @@ for k = 1:K_max
     end
 
     % Stop early if converged
-    if k > 1 && rel_change(k) < zeta
+    if k > 1 && rel_change(k) < conv_threshold
         fprintf('\n  *** Converged at iteration %d ***\n', k);
         K_max = k; break;
     end
@@ -250,35 +250,45 @@ fprintf('\nDone. All figures generated.\n');
 %% ══════════════════════════════════════════════════════════════════════════
 %%  LOCAL FUNCTION: simulate Wiener output given parameter vector
 %% ══════════════════════════════════════════════════════════════════════════
-function c_sim = simulate_wiener(r, nu, theta, na, nb, nd, T)
-    a_v  = theta(1:na);
-    b_v  = theta(na+1:na+nb);
-    f2_v = theta(na+nb+1);
-    d_v  = theta(na+nb+2:end);
+function c_sim = simulate_wiener(r, nu, theta, na, nb, nf, nd, T)
 
-    alpha = zeros(T,1);
-    e_s   = zeros(T,1);
-    c_sim = zeros(T,1);
+% ── Minimal dimension check ───────────────────────────────────────────
+assert(length(theta = na+nb+nf-1+nd))
 
-    for t = 1:T
-        % linear subsystem
-        val = 0;
-        for i = 1:na
-            if t > i; val = val - a_v(i)*alpha(t-i); end
-        end
-        for i = 1:nb
-            if t > i; val = val + b_v(i)*r(t-i); end
-        end
-        alpha(t) = val;
+% ── Extract parameters ────────────────────────────────────────────────
+a_v  = theta(1:na);
+b_v  = theta(na+1:na+nb);
+f_v = theta(na+nb+1:na+nb+nf-1);
+d_v  = theta(na+nb+nf:end);
 
-        % AR noise
-        en = nu(t);
-        for i = 1:nd
-            if t > i; en = en - d_v(i)*e_s(t-i); end
-        end
-        e_s(t) = en;
+% ── 1. Linear subsystem G(z): r → alpha ───────────────────────────────
+% Same structure as Section 3
+den_lin = [1; a_v(:)];       % denominator
+num_lin = [0; b_v(:)];       % numerator (shifted)
 
-        % output: beta + e,  f1 = 1 (fixed)
-        c_sim(t) = alpha(t) + f2_v*alpha(t)^2 + e_s(t);
-    end
+alpha = filter(num_lin.', den_lin.', r);
+
+% ── 2. Static nonlinearity F(·): alpha → beta ─────────────────────────
+% Polynomial: beta = alpha + f2*alpha^2
+% polyval expects descending powers → [f2, 1, 0]
+poly_coeffs = [f_v; 1; 0];   % descending: f2*x^2 + 1*x + 0
+
+beta = polyval(poly_coeffs.', alpha);
+
+% ── 3. AR noise: nu → e ───────────────────────────────────────────────
+% e(t) = -d1*e(t-1) + nu(t)  → denominator = [1; -d_v]
+den_ar = [1; -d_v(:)];
+
+e = filter(1, den_ar.', nu);
+
+% ── 4. Output ─────────────────────────────────────────────────────────
+c_sim = beta + e;
+
+% Ensure column vector (robustness)
+c_sim = c_sim(:);
+
+% Optional: truncate if needed (in case inputs are longer)
+if nargin == 7
+    c_sim = c_sim(1:T);
+end
 end
