@@ -11,7 +11,7 @@
       }
     },
     "RGLS": {
-      "stability_projection": true,
+      "stability_projection": false,
       "stability_radius": 0.98,
       "na": 2,
       "nb": 2,
@@ -24,9 +24,9 @@
         "e_init_mode": "output_residual",
         "theta_init": 1e-6
       },
-      "first_iter_regularization": {
+      "regularization": {
         "enabled": true,
-        "lambda": 1e-3
+        "lambda": 1e-8
       }
     },
     "WS_GNI": {
@@ -47,11 +47,11 @@
       "order": 1,
       "notes": "Placeholder for gradient-root GHAM first-order update."
     },
-    "WS_GGHAM_2": {
-      "eta": 1.0,
+    "WS_GGHAM_2_I": {
+      "eta": 1e-4,
       "linear_operator": "identity",
       "order": 2,
-      "notes": "Placeholder for second-order gradient-root GHAM update."
+      "notes": "Second-order gradient-root GHAM update for L = I (equation 24 in the notes)."
     },
     "WS_LGHAM_1": {
       "epsilon0": 1e-4,

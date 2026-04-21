@@ -18,7 +18,7 @@ selected_methods = { ...
     'RGLS', ...
     'WS-GNI', ...
     'WS-GGHAM-1', ...
-    'WS-GGHAM-2', ...
+    'WS-GGHAM-2-I', ...
     'WS-LGHAM-1', ...
     'WS-LGHAM-2', ...
     'WS-LGHAM-3' ...
@@ -258,10 +258,13 @@ switch upper(method_name)
 
     case 'RGLS'
         theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg, iter_idx);
-        theta_new = project_stable_theta(theta_ls, method_cfg);
+        theta_new = project_stable_theta(theta_ls, method_cfg); % can be deactivated in config file
 
     case 'WS-GNI'
         theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg);
+
+    case 'WS-GGHAM-2-I'
+        theta_new = ws_ggham_2_i_update(Phi_hat, c, theta_hat, method_cfg);
 
     case {'WS-GGHAM-1', 'WS-GGHAM-2', 'WS-LGHAM-1', 'WS-LGHAM-2', 'WS-LGHAM-3'}
         aux_state.status = 'not_implemented';
@@ -271,6 +274,20 @@ switch upper(method_name)
         aux_state.status = 'not_implemented';
         aux_state.message = sprintf('Unknown method "%s". Add its config and update rule before running it.', method_name);
 end
+end
+
+function theta_new = ws_ggham_2_i_update(Phi_hat, c, theta_hat, method_cfg)
+eta = 1.0;
+if isfield(method_cfg, 'eta')
+    eta = method_cfg.eta;
+end
+
+residual = c - Phi_hat * theta_hat;
+gradient_root = Phi_hat.' * residual;
+H = Phi_hat.' * Phi_hat;
+
+theta_1 = eta * gradient_root;
+theta_new = theta_hat + 2 * theta_1 - eta * (H * theta_1);
 end
 
 function theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg)
@@ -382,20 +399,20 @@ init_state = struct('alpha_hat', alpha_hat, 'e_hat', e_hat, 'theta_hat', theta_h
 end
 
 function theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg, iter_idx)
-use_reg = false;
 lambda_reg = 0;
 
-if iter_idx == 1 && isfield(method_cfg, 'first_iter_regularization')
-    reg_cfg = method_cfg.first_iter_regularization;
+if isfield(method_cfg, 'regularization')
+    reg_cfg = method_cfg.regularization;
     if isfield(reg_cfg, 'enabled') && reg_cfg.enabled
-        use_reg = true;
         if isfield(reg_cfg, 'lambda')
             lambda_reg = reg_cfg.lambda;
+        else
+            lambda_reg = 0;
         end
     end
 end
 
-if use_reg
+if lambda_reg > 0
     ncols = size(Phi_hat, 2);
     theta_ls = (Phi_hat.' * Phi_hat + lambda_reg * eye(ncols)) \ (Phi_hat.' * c);
 else
