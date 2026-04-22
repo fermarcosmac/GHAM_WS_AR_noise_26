@@ -30,7 +30,7 @@
       }
     },
     "WS_GNI": {
-      "step_size": 1.0,
+      "step_size": 0.9,
       "hessian_regularization": 1e-8,
       "initialization": {
         "mode": "physical",
