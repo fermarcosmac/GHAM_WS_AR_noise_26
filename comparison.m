@@ -19,9 +19,10 @@ selected_methods = { ...
     'WS-GGI', ...
     'WS-GGHAM-1-dH', ...
     'WS-GGHAM-2-I', ...
-    'WS-LGHAM-1', ...
-    'WS-LGHAM-2', ...
-    'WS-LGHAM-3' ...
+    'WS-GGHAM-2-dH', ...
+    'WS-LGHAM-1-TIK', ...
+    'WS-LGHAM-2-TIK', ...
+    'WS-LGHAM-3-TIK' ...
 };
 
 %% 1. True system parameters
@@ -36,13 +37,21 @@ b_true = [0.23; 0.98];
 f_true = 0.32;
 d_true = -0.40;
 
+%na = 10;
+%nb = 10;
+%nf = 2;
+%n = na + nb + (nf - 1) + nd;
+%a_true = -1e-1*rand(na,1);
+%b_true = 1e-1*rand(nb,1);
+%f_true = randn(nf - 1, 1);
+
 theta_true = [a_true; b_true; f_true; d_true];
 param_names = build_param_names(na, nb, nf, nd);
 param_labels = build_plot_labels(na, nb, nf, nd);
 
 %% 2. Shared experiment settings
 lambda_g = 1000;
-K_max = 70;
+K_max = 270*4;
 conv_threshold = 1e-8;
 sigma_nu = 0.10;
 burn_in = 100;
@@ -268,7 +277,19 @@ switch upper(method_name)
     case 'WS-GGHAM-2-I'
         theta_new = ws_ggham_2_i_update(Phi_hat, c, theta_hat, method_cfg);
 
-    case {'WS-GGHAM-1', 'WS-GGHAM-2', 'WS-LGHAM-1', 'WS-LGHAM-2', 'WS-LGHAM-3'}
+    case {'WS_GGHAM_2_DH', 'WS-GGHAM-2-DH'}
+        theta_new = ws_ggham_2_dh_update(Phi_hat, c, theta_hat, method_cfg);
+
+    case {'WS-LGHAM-1', 'WS_LGHAM_1', 'WS-LGHAM-1-PINV', 'WS_LGHAM_1_PINV', 'WS-LGHAM-1-TIK', 'WS_LGHAM_1_TIK'}
+        theta_new = ws_lgham_update(Phi_hat, c, theta_hat, method_cfg, get_method_order(method_cfg, 1));
+
+    case {'WS-LGHAM-2', 'WS_LGHAM_2', 'WS-LGHAM-2-TIK', 'WS_LGHAM_2_TIK', 'WS-LGHAM-2-PINV', 'WS_LGHAM_2_PINV'}
+        theta_new = ws_lgham_update(Phi_hat, c, theta_hat, method_cfg, get_method_order(method_cfg, 2));
+
+    case {'WS-LGHAM-3', 'WS_LGHAM_3', 'WS-LGHAM-3-TIK', 'WS_LGHAM_3_TIK', 'WS-LGHAM-3-PINV', 'WS_LGHAM_3_PINV'}
+        theta_new = ws_lgham_update(Phi_hat, c, theta_hat, method_cfg, get_method_order(method_cfg, 3));
+
+    case {'WS-GGHAM-1', 'WS-GGHAM-2'}
         aux_state.status = 'not_implemented';
         aux_state.message = sprintf('%s placeholder selected. Add its theta-update rule in method_parameter_update().', method_name);
 
@@ -295,6 +316,106 @@ H = Phi_hat.' * Phi_hat;
 
 theta_1 = eta * gradient_root;
 theta_new = theta_hat + 2 * theta_1 - eta * (H * theta_1);
+end
+
+function theta_new = ws_ggham_2_dh_update(Phi_hat, c, theta_hat, method_cfg)
+eta = 1.0;
+if isfield(method_cfg, 'eta')
+    eta = method_cfg.eta;
+end
+
+lambda_reg = 0;
+if isfield(method_cfg, 'hessian_regularization')
+    lambda_reg = method_cfg.hessian_regularization;
+end
+
+residual = c - Phi_hat * theta_hat;
+gradient_root = Phi_hat.' * residual;
+H = Phi_hat.' * Phi_hat;
+
+% Two-step implementation of eq. (26):
+% theta_1 = eta * diag(H)^(-1) * gradient_root
+% theta_{k+1} = theta_k + 2*theta_1 - eta * diag(H)^(-1) * (H * theta_1)
+diag_H = diag(H);
+if lambda_reg > 0
+    diag_H = diag_H + lambda_reg;
+end
+
+theta_1 = eta * (gradient_root ./ diag_H);
+theta_new = theta_hat + 2 * theta_1 - eta * ((H * theta_1) ./ diag_H);
+end
+
+function theta_new = ws_lgham_update(Phi_hat, c, theta_hat, method_cfg, order)
+if order < 1 || order > 3
+    error('WS-LGHAM is currently implemented only for orders 1 to 3.');
+end
+
+eps0 = get_eps0(method_cfg);
+eta = method_cfg.eta;
+
+residual = c - Phi_hat * theta_hat;
+J_theta = 0.5 * (residual.' * residual);
+gradient_root = Phi_hat.' * residual;
+H = Phi_hat.' * Phi_hat;
+
+theta_1 = solve_loss_root_inverse(gradient_root, J_theta - eps0, method_cfg);
+theta_new = theta_hat + eta*theta_1;
+
+if order >= 2
+    theta_2 = theta_1 + solve_loss_root_inverse(gradient_root, gradient_root.' * theta_1, method_cfg);
+    theta_new = theta_new + eta*theta_2;
+end
+
+if order >= 3
+    rhs_3 = 0.5 * (theta_1.' * H * theta_1) + gradient_root.' * theta_2;
+    theta_3 = theta_2 + solve_loss_root_inverse(gradient_root, rhs_3, method_cfg);
+    theta_new = theta_new + eta*theta_3;
+end
+end
+
+function eps0 = get_eps0(method_cfg)
+eps0 = 0;
+if isfield(method_cfg, 'eps_0')
+    eps0 = method_cfg.eps_0;
+elseif isfield(method_cfg, 'epsilon0')
+    eps0 = method_cfg.epsilon0;
+end
+end
+
+function order = get_method_order(method_cfg, default_order)
+order = default_order;
+if isfield(method_cfg, 'order')
+    order = method_cfg.order;
+end
+end
+
+function direction = solve_loss_root_inverse(gradient_root, rhs_scalar, method_cfg)
+
+solver = 'pinv';
+if isfield(method_cfg, 'inverse_solver')
+    solver = lower(method_cfg.inverse_solver);
+end
+
+gg = gradient_root.' * gradient_root;
+
+switch solver
+    case 'pinv'
+        if gg <= eps
+            direction = zeros(size(g));
+        else
+            direction = gradient_root'\ rhs_scalar;
+        end
+
+    case 'tikhonov'
+        lambda = 0;
+        if isfield(method_cfg, 'tikhonov_lambda')
+            lambda = method_cfg.tikhonov_lambda;
+        end
+        direction = lsqminnorm(gradient_root', rhs_scalar, RegularizationFactor=lambda);
+
+    otherwise
+        error('Unknown WS-LGHAM inverse_solver "%s".', solver);
+end
 end
 
 function theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg)
@@ -375,16 +496,18 @@ end
 if isfield(init_cfg, 'mode') && strcmpi(init_cfg.mode, 'physical')
     a0 = zeros(na, 1);
     b0 = zeros(nb, 1);
+    if nb >= 1
+        b0(1) = 1;
+    end
 
     if isfield(init_cfg, 'linear_init_a')
-        a0 = init_cfg.linear_init_a(:);
-        assert(numel(a0) == na, 'linear_init_a must have length na.');
+        a0 = fit_init_vector(init_cfg.linear_init_a, na, 0);
     end
     if isfield(init_cfg, 'linear_init_b')
-        b0 = init_cfg.linear_init_b(:);
-        assert(numel(b0) == nb, 'linear_init_b must have length nb.');
-    elseif nb >= 1
-        b0(1) = 1;
+        b0 = fit_init_vector(init_cfg.linear_init_b, nb, 0);
+        if nb >= 1 && ~any(abs(b0) > 0)
+            b0(1) = 1;
+        end
     end
 
     den_lin_0 = [1; a0];
@@ -428,6 +551,22 @@ else
 end
 
 init_state = struct('alpha_hat', alpha_hat, 'e_hat', e_hat, 'theta_hat', theta_hat);
+end
+
+function vec_out = fit_init_vector(vec_in, target_len, fill_value)
+if nargin < 3
+    fill_value = 0;
+end
+
+if isscalar(vec_in)
+    vec_out = vec_in * ones(target_len, 1);
+    return;
+end
+
+vec_in = vec_in(:);
+vec_out = fill_value * ones(target_len, 1);
+n_copy = min(numel(vec_in), target_len);
+vec_out(1:n_copy) = vec_in(1:n_copy);
 end
 
 function theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg)

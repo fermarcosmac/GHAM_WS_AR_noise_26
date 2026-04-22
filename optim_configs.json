@@ -1,7 +1,7 @@
 {
   "methods": {
     "WS_GGI": {
-      "step_scale": 1.5,
+      "step_scale": 1.2e0,
       "initialization": {
         "mode": "physical",
         "linear_init_a": [0.0, 0.0],
@@ -42,36 +42,68 @@
       "notes": "Newton-style update using Hessian H = Phi' * Phi."
     },
     "WS_GGHAM_1_dH": {
-      "eta": 1e0,
+      "eta": 2e-1,
       "hessian_mode": "diag",
-      "hessian_regularization": 1e3,
+      "hessian_regularization": 1e2,
       "order": 1,
       "notes": "Placeholder for gradient-root GHAM first-order update."
     },
     "WS_GGHAM_2_I": {
-      "eta": 6e-5,
+      "eta":1.7e-4,
       "linear_operator": "identity",
       "order": 2,
-      "notes": "Second-order gradient-root GHAM update for L = I (equation 24 in the notes)."
+      "notes": "Second-order gradient-root GHAM update for L = I."
     },
-    "WS_LGHAM_1": {
-      "epsilon0": 1e-4,
+      "WS_GGHAM_2_dH": {
+          "eta": 2e-1,
+          "hessian_regularization": 1e2,
+          "linear_operator": "diag_hessian",
+          "order": 2,
+          "notes": "Second-order gradient-root GHAM update for L = diag(H_J), implemented with the two-step procedure from equation 26."
+      },
+    "WS_LGHAM_1_PINV": {
+      "eps_0": 1e-1,
+      "eta": 1e1,
       "inverse_solver": "pinv",
       "order": 1,
-      "notes": "Placeholder for loss-root GHAM first-order update."
+      "notes": "Loss-root GHAM update using first-order correction term."
     },
+      "WS_LGHAM_1_TIK": {
+          "eps_0": 1e0,
+          "eta": 1e0,
+          "inverse_solver": "tikhonov",
+          "tikhonov_lambda": 1e3,
+          "order": 1,
+          "notes": "Loss-root GHAM update using first-order correction term."
+      },
+      "WS_LGHAM_2_TIK": {
+          "eps_0": 1e0,
+          "eta": 2e0,
+          "inverse_solver": "tikhonov",
+          "tikhonov_lambda": 0.25e4,
+          "order": 2,
+          "notes": "Loss-root GHAM update using correction terms up to second order with Tikhonov regularization."
+      },
+      "WS_LGHAM_3_TIK": {
+          "eps_0": 1e0,
+          "eta": 1e0,
+          "inverse_solver": "tikhonov",
+          "tikhonov_lambda": 0.25e4,
+          "order": 3,
+          "notes": "Loss-root GHAM update using correction terms up to third order with Tikhonov regularization."
+      },
     "WS_LGHAM_2": {
-      "epsilon0": 1e-4,
+      "eps_0": 1e-4,
       "inverse_solver": "tikhonov",
       "tikhonov_lambda": 1e-3,
       "order": 2,
-      "notes": "Placeholder for loss-root GHAM second-order update."
+      "notes": "Loss-root GHAM update using correction terms up to second order."
     },
     "WS_LGHAM_3": {
-      "epsilon0": 1e-4,
+      "eps_0": 1e-4,
       "inverse_solver": "pinv",
       "order": 3,
-      "notes": "Placeholder for loss-root GHAM third-order update."
+      "notes": "Loss-root GHAM update using correction terms up to third order."
     }
   }
 }
