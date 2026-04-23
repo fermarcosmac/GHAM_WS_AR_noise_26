@@ -1,0 +1,56 @@
+{
+  "methods": {
+    "WS_GGI": {
+      "step_scale": 1.2,
+      "initialization": {
+        "mode": "physical",
+        "linear_init_a": [0.0, 0.0],
+        "linear_init_b": [1.0, 0.0],
+        "e_init_mode": "output_residual",
+        "theta_init": 1e-6
+      }
+    },
+    "RGLS": {
+      "derivative_order": 1,
+      "initialization": {
+        "mode": "physical",
+        "linear_init_a": [0.0, 0.0],
+        "linear_init_b": [1.0, 0.0],
+        "e_init_mode": "output_residual",
+        "theta_init": 1e-6
+      },
+      "notes": "Placeholder. Jacobian of parameter-to-loss mapping is extracted."
+    },
+    "WS_GNI": {
+      "derivative_order": 2,
+      "initialization": {
+        "mode": "physical",
+        "linear_init_a": [0.0, 0.0],
+        "linear_init_b": [1.0, 0.0],
+        "e_init_mode": "output_residual",
+        "theta_init": 1e-6
+      },
+      "notes": "Placeholder. Gradient and Hessian are extracted from the parameter-to-loss mapping."
+    },
+    "WS_GGHAM_1_dH": {
+      "derivative_order": 2,
+      "notes": "Placeholder for first-order GHAM update with diagonal-Hessian logic."
+    },
+    "WS_GGHAM_2_I": {
+      "derivative_order": 3,
+      "notes": "Placeholder for second-order GHAM update with identity linear operator."
+    },
+    "WS_GGHAM_2_dH": {
+      "derivative_order": 3,
+      "notes": "Placeholder for second-order GHAM update with diagonal-Hessian linear operator."
+    },
+    "WS_LGHAM_1_TIK": {
+      "derivative_order": 3,
+      "notes": "Placeholder for loss-root GHAM update. Derivatives are available for custom manual rules."
+    },
+    "WS_LGHAM_3_TIK": {
+      "derivative_order": 3,
+      "notes": "Placeholder for higher-order loss-root GHAM update. Derivatives are available for custom manual rules."
+    }
+  }
+}

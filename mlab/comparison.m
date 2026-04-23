@@ -410,7 +410,7 @@ elseif isfield(method_cfg, 'epsilon0')
     eps0 = method_cfg.epsilon0;
 end
 if strcmp(eps0,"automatic")
-    eps0 = method_cfg.best_error_so_far*0.99; % HARDCODED MULTIPLIER
+    eps0 = method_cfg.best_error_so_far*1; % HARDCODED MULTIPLIER
 end
 end
 
