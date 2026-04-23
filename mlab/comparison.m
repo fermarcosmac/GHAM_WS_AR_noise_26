@@ -21,8 +21,7 @@ selected_methods = { ...
     'WS-GGHAM-2-I', ...
     'WS-GGHAM-2-dH', ...
     'WS-LGHAM-1-TIK', ...
-    'WS-LGHAM-2-TIK', ...
-    'WS-LGHAM-3-TIK' ...
+    'WS-LGHAM-3-TIK', ...
 };
 
 %% 1. True system parameters
@@ -51,10 +50,11 @@ param_labels = build_plot_labels(na, nb, nf, nd);
 
 %% 2. Shared experiment settings
 lambda_g = 1000;
-K_max = 270*4;
+K_max = 2000;
 conv_threshold = 1e-8;
 sigma_nu = 0.10;
 burn_in = 100;
+enforce_fixed_iterations = true;
 
 %% 3. Generate input / noise / true output
 N_total = lambda_g + burn_in;
@@ -83,6 +83,7 @@ method_configs = load_method_configs(config_file);
 
 %% 5. Run selected methods
 results = [];
+best_error_so_far = Inf;
 for m = 1:numel(selected_methods)
     method_name = selected_methods{m};
     method_cfg = get_method_config(method_configs, method_name);
@@ -92,8 +93,9 @@ for m = 1:numel(selected_methods)
 
     method_result = run_identification_method( ...
         method_name, method_cfg, r, nu, c, theta_true, ...
-        na, nb, nf, nd, lambda_g, K_max, conv_threshold);
+        na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far);
 
+    best_error_so_far = method_result.best_error_so_far;
     if isempty(results)
         results = method_result;
     else
@@ -126,10 +128,13 @@ fprintf('\nDone. All figures generated.\n');
 
 
 %% Local functions
-function result = run_identification_method(method_name, method_cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold)
+function result = run_identification_method(method_name, method_cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far)
 n = na + nb + (nf - 1) + nd;
 
 init_state = initialize_method_state(method_cfg, r, c, na, nb, lambda_g, n);
+if contains(method_name,'LGHAM')
+    method_cfg.best_error_so_far = best_error_so_far;
+end
 
 alpha_hat = init_state.alpha_hat;
 e_hat = init_state.e_hat;
@@ -146,6 +151,7 @@ cum_time = NaN(K_max, 1);
 status = 'ok';
 status_msg = '';
 iter_count = K_max;
+has_converged = false;
 
 % Record common pre-update metrics so all methods start from iteration 0.
 theta_hist(:, 1) = theta_hat;
@@ -158,6 +164,16 @@ iter_time(1) = 0;
 cum_time(1) = 0;
 
 for k = 2:K_max
+    if enforce_fixed_iterations && has_converged
+        theta_hist(:, k) = theta_hat;
+        param_err(k) = param_err(k - 1);
+        rel_change(k) = 0;
+        RMSE_hist(k) = RMSE_hist(k - 1);
+        iter_time(k) = 0;
+        cum_time(k) = cum_time(k - 1);
+        continue;
+    end
+
     t_iter = tic;
 
     Phi_hat = build_state_matrix(alpha_hat, e_hat, r, na, nb, nf, nd);
@@ -206,10 +222,21 @@ for k = 2:K_max
     end
 
     if rel_change(k) < conv_threshold
-        iter_count = k;
-        fprintf('*** %s converged at iteration %d ***\n', method_name, iter_num);
-        break;
+        if enforce_fixed_iterations
+            has_converged = true;
+            fprintf('*** %s converged at iteration %d (holding parameters for remaining iterations) ***\n', method_name, iter_num);
+        else
+            iter_count = k;
+            fprintf('*** %s converged at iteration %d ***\n', method_name, iter_num);
+            break;
+        end
     end
+end
+
+% Final error
+final_error = 0.5*sum((c-Phi_hat*theta_hat).^2);
+if (final_error < best_error_so_far) && ~contains('LGHAM',method_name)
+    best_error_so_far = final_error;
 end
 
 if strcmp(status, 'ok')
@@ -250,7 +277,8 @@ result = struct( ...
     'cum_time', cum_time, ...
     'final_err', final_err, ...
     'total_time', total_time, ...
-    'iterations', iter_count);
+    'iterations', iter_count, ...
+    'best_error_so_far', best_error_so_far);
 end
 
 function [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, iter_idx)
@@ -283,10 +311,10 @@ switch upper(method_name)
     case {'WS-LGHAM-1', 'WS_LGHAM_1', 'WS-LGHAM-1-PINV', 'WS_LGHAM_1_PINV', 'WS-LGHAM-1-TIK', 'WS_LGHAM_1_TIK'}
         theta_new = ws_lgham_update(Phi_hat, c, theta_hat, method_cfg, get_method_order(method_cfg, 1));
 
-    case {'WS-LGHAM-2', 'WS_LGHAM_2', 'WS-LGHAM-2-TIK', 'WS_LGHAM_2_TIK', 'WS-LGHAM-2-PINV', 'WS_LGHAM_2_PINV'}
+    case {'WS-LGHAM-2', 'WS_LGHAM_2','WS-LGHAM-2-TIK', 'WS_LGHAM_2_TIK'}
         theta_new = ws_lgham_update(Phi_hat, c, theta_hat, method_cfg, get_method_order(method_cfg, 2));
 
-    case {'WS-LGHAM-3', 'WS_LGHAM_3', 'WS-LGHAM-3-TIK', 'WS_LGHAM_3_TIK', 'WS-LGHAM-3-PINV', 'WS_LGHAM_3_PINV'}
+    case {'WS-LGHAM-3', 'WS_LGHAM_3','WS-LGHAM-3-TIK', 'WS_LGHAM_3_TIK'}
         theta_new = ws_lgham_update(Phi_hat, c, theta_hat, method_cfg, get_method_order(method_cfg, 3));
 
     case {'WS-GGHAM-1', 'WS-GGHAM-2'}
@@ -358,18 +386,19 @@ J_theta = 0.5 * (residual.' * residual);
 gradient_root = Phi_hat.' * residual;
 H = Phi_hat.' * Phi_hat;
 
-theta_1 = solve_loss_root_inverse(gradient_root, J_theta - eps0, method_cfg);
-theta_new = theta_hat + eta*theta_1;
+%theta_1 = eta * solve_loss_root_inverse(gradient_root, J_theta - eps0, method_cfg);
+theta_1 = eta * solve_loss_root_inverse(gradient_root, J_theta - eps0, method_cfg);
+theta_new = theta_hat + theta_1;
 
 if order >= 2
-    theta_2 = theta_1 + solve_loss_root_inverse(gradient_root, gradient_root.' * theta_1, method_cfg);
-    theta_new = theta_new + eta*theta_2;
+    theta_2 = theta_1 + eta * solve_loss_root_inverse(gradient_root, gradient_root.' * theta_1, method_cfg);
+    theta_new = theta_new + theta_2;
 end
 
 if order >= 3
     rhs_3 = 0.5 * (theta_1.' * H * theta_1) + gradient_root.' * theta_2;
-    theta_3 = theta_2 + solve_loss_root_inverse(gradient_root, rhs_3, method_cfg);
-    theta_new = theta_new + eta*theta_3;
+    theta_3 = theta_2 + eta * solve_loss_root_inverse(gradient_root, rhs_3, method_cfg);
+    theta_new = theta_new + theta_3;
 end
 end
 
@@ -379,6 +408,9 @@ if isfield(method_cfg, 'eps_0')
     eps0 = method_cfg.eps_0;
 elseif isfield(method_cfg, 'epsilon0')
     eps0 = method_cfg.epsilon0;
+end
+if strcmp(eps0,"automatic")
+    eps0 = method_cfg.best_error_so_far*0.99; % HARDCODED MULTIPLIER
 end
 end
 
