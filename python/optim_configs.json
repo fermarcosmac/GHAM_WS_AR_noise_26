@@ -50,16 +50,16 @@
       "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with identity linear operator."
     },
     "WS_GGHAM_2_dH": {
-      "eta": 1.0,
-      "hessian_regularization": 50.0,
-      "d_step_multiplier": 100.0,
+      "eta": 0.5,
+      "hessian_regularization": 5.0,
+      "d_step_multiplier": 10.0,
       "derivative_order": 2,
       "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with diagonal-Hessian linear operator."
     },
     "WS_GGHAM_2_H": {
-      "eta": 1.0,
-      "hessian_regularization": 50.0,
-      "d_step_multiplier": 100.0,
+      "eta": 1.2,
+      "hessian_regularization": 10.0,
+      "d_step_multiplier": 10.0,
       "derivative_order": 2,
       "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with Hessian linear operator."
     },

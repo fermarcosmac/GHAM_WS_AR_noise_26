@@ -187,7 +187,8 @@ def ws_ggham_2_i_update(
     step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
 
     # TODO: use step_scale (different per each parameter)
-    theta_new = theta_hat - (2*eta*torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device) - eta**2*hessian) @ gradient
+    theta_new = theta_hat - step_scale * ((2*eta*torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device) - eta**2*hessian) @ gradient)
+    #theta_new = theta_hat - (2*torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device)@step_scale - hessian@(step_scale**2)) @ gradient
 
     derivatives["gradient"] = gradient.detach()
     derivatives["hess"] = hessian.detach()
@@ -210,17 +211,16 @@ def ws_ggham_2_dh_update(
     gradient = derivatives["grad"]
     hessian = derivatives["hess"]
 
-    gradient_root = -gradient
     diag_h = torch.diagonal(hessian) + lambda_reg
     safe_diag_h = torch.where(diag_h.abs() > 1e-12, diag_h, torch.full_like(diag_h, 1e-12))
 
-    theta_1 = eta * (gradient_root / safe_diag_h)
+    theta_1 = - eta * (gradient / safe_diag_h)
     delta = 2.0 * theta_1 - eta * ((hessian @ theta_1) / safe_diag_h)
 
     step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
     theta_new = theta_hat + step_scale * delta
 
-    derivatives["gradient_root"] = gradient_root.detach()
+    derivatives["gradient"] = gradient.detach()
     derivatives["diag_hess_reg"] = safe_diag_h.detach()
     derivatives["theta_1"] = theta_1.detach()
     derivatives["gham_delta"] = delta.detach()
@@ -244,14 +244,11 @@ def ws_ggham_2_h_update(
     hessian = derivatives["hess"]
 
     hessian_reg = hessian + lambda_reg * torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device)
-    gradient_root = -gradient
 
     try:
-        h_inv_g = torch.linalg.solve(hessian_reg, gradient_root.unsqueeze(-1)).squeeze(-1)
+        theta_1 = -eta * torch.linalg.solve(hessian_reg, gradient.unsqueeze(-1)).squeeze(-1)
     except RuntimeError:
-        h_inv_g = torch.linalg.lstsq(hessian_reg, gradient_root.unsqueeze(-1)).solution.squeeze(-1)
-
-    theta_1 = eta * h_inv_g
+        theta_1 = -eta * torch.linalg.lstsq(hessian_reg, gradient.unsqueeze(-1)).solution.squeeze(-1)
 
     h_theta_1 = hessian @ theta_1
     try:
@@ -259,12 +256,13 @@ def ws_ggham_2_h_update(
     except RuntimeError:
         correction = torch.linalg.lstsq(hessian_reg, h_theta_1.unsqueeze(-1)).solution.squeeze(-1)
 
+    # NOTE: if hessian is "nice" (i.e. invertible and well-conditioned), this should be just theta_1
     delta = 2.0 * theta_1 - eta * correction
 
     step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
     theta_new = theta_hat + step_scale * delta
 
-    derivatives["gradient_root"] = gradient_root.detach()
+    derivatives["gradient"] = gradient.detach()
     derivatives["hess_reg"] = hessian_reg.detach()
     derivatives["theta_1"] = theta_1.detach()
     derivatives["h_correction"] = correction.detach()
