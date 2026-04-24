@@ -1,7 +1,8 @@
 {
   "methods": {
     "WS_GGI": {
-      "step_scale": 1.2,
+      "step_size": 0.03,
+      "d_step_multiplier": 50.0,
       "initialization": {
         "mode": "physical",
         "linear_init_a": [0.0, 0.0],
@@ -22,6 +23,9 @@
       "notes": "Placeholder. Jacobian of parameter-to-loss mapping is extracted."
     },
     "WS_GNI": {
+      "eta": 1.0,
+      "d_step_multiplier": 20.0,
+      "hessian_regularization": 10.0,
       "derivative_order": 2,
       "initialization": {
         "mode": "physical",
@@ -30,7 +34,7 @@
         "e_init_mode": "output_residual",
         "theta_init": 1e-6
       },
-      "notes": "Placeholder. Gradient and Hessian are extracted from the parameter-to-loss mapping."
+      "notes": "Newton-style update using autodiff gradient and Hessian of params_to_loss."
     },
     "WS_GGHAM_1_dH": {
       "derivative_order": 2,

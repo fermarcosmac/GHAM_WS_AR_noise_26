@@ -18,10 +18,10 @@ selected_methods = { ...
     'WS-GNI', ...
     'WS-GGI', ...
     'WS-GGHAM-1-dH', ...
-    'WS-GGHAM-2-I', ...
     'WS-GGHAM-2-dH', ...
     'WS-LGHAM-1-TIK', ...
     'WS-LGHAM-3-TIK', ...
+    %'WS-GGHAM-2-I', ...
 };
 
 %% 1. True system parameters
@@ -49,12 +49,12 @@ param_names = build_param_names(na, nb, nf, nd);
 param_labels = build_plot_labels(na, nb, nf, nd);
 
 %% 2. Shared experiment settings
-lambda_g = 1000;
+lambda_g = 1000*100;                % more data, better results (less bias)
 K_max = 2000;
 conv_threshold = 1e-8;
-sigma_nu = 0.10;
+sigma_nu = 0.10;                    % noise power changes the bias in parameter estimates
 burn_in = 100;
-enforce_fixed_iterations = true;
+enforce_fixed_iterations = true;    % For comparison purposes
 
 %% 3. Generate input / noise / true output
 N_total = lambda_g + burn_in;
@@ -177,7 +177,7 @@ for k = 2:K_max
     t_iter = tic;
 
     Phi_hat = build_state_matrix(alpha_hat, e_hat, r, na, nb, nf, nd);
-    [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, k - 1);
+    [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, k - 1, nd);
 
     if strcmp(aux_state.status, 'not_implemented')
         status = 'skipped';
@@ -281,7 +281,7 @@ result = struct( ...
     'best_error_so_far', best_error_so_far);
 end
 
-function [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, iter_idx)
+function [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, iter_idx, nd)
 theta_new = theta_hat;
 aux_state = struct('status', 'ok', 'message', '');
 
@@ -291,13 +291,15 @@ switch upper(method_name)
             error('WS-GGI config requires field "step_scale".');
         end
         delta = method_cfg.step_scale / max(norm(Phi_hat, 'fro')^2, eps);
-        theta_new = theta_hat + delta * (Phi_hat' * (c - Phi_hat * theta_hat));
+        update_dir = delta * (Phi_hat' * (c - Phi_hat * theta_hat));
+        d_scale = build_d_step_scale_vector(method_cfg, numel(theta_hat), nd);
+        theta_new = theta_hat + d_scale .* update_dir;
 
     case 'RGLS'
         theta_new = ws_rgls_update(Phi_hat, c, method_cfg);
 
     case 'WS-GNI'
-        theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg);
+        theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg, nd);
 
     case {'WS_GGHAM_1_DH', 'WS-GGHAM-1-DH'}
         theta_new = ws_ggham_1_dh_update(Phi_hat, c, theta_hat, method_cfg);
@@ -450,7 +452,7 @@ switch solver
 end
 end
 
-function theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg)
+function theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg, nd)
 step_size = 1.0;
 if isfield(method_cfg, 'step_size')
     step_size = method_cfg.step_size;
@@ -475,7 +477,27 @@ else
     direction = H \ gradient;
 end
 
-theta_new = theta_hat + step_size * direction;
+step_scale = build_d_step_scale_vector(method_cfg, numel(theta_hat), nd);
+theta_new = theta_hat + step_size * (step_scale .* direction);
+end
+
+function step_scale = build_d_step_scale_vector(method_cfg, n_params, nd)
+step_scale = ones(n_params, 1);
+
+if nd <= 0
+    return;
+end
+
+d_multiplier = 1.0;
+if isfield(method_cfg, 'd_step_multiplier')
+    d_multiplier = method_cfg.d_step_multiplier;
+end
+
+if d_multiplier == 1.0
+    return;
+end
+
+step_scale((n_params - nd + 1):n_params) = d_multiplier;
 end
 
 function theta_new = ws_ggham_1_dh_update(Phi_hat, c, theta_hat, method_cfg)

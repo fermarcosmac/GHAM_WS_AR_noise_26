@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -21,7 +22,7 @@ from common import (
     now,
     plot_method_metrics,
     plot_parameter_trajectories,
-    print_result_header,
+    print_iteration_table,
     set_seed,
 )
 from methods import method_parameter_update
@@ -58,6 +59,7 @@ def run_identification_method(
     status_msg = ""
     iter_count = K_max
     has_converged = False
+    converged_iter: int | None = None
     derivative_snapshots: list[dict[str, np.ndarray]] = []
 
     theta_hist[:, 0] = theta_hat
@@ -68,7 +70,7 @@ def run_identification_method(
     iter_time[0] = 0.0
     cum_time[0] = 0.0
 
-    for k in range(1, K_max):
+    for k in tqdm(range(1, K_max), desc=method_name, unit="iter", leave=False):
         if enforce_fixed_iterations and has_converged:
             theta_hist[:, k] = theta_hat
             param_err[k] = param_err[k - 1]
@@ -125,18 +127,13 @@ def run_identification_method(
         iter_time[k] = now() - t0
         cum_time[k] = cum_time[k - 1] + iter_time[k]
 
-        iter_num = k
-        if iter_num in {5, 10, 15, 30, 50, 70, 100, 240} or iter_num == (K_max - 1):
-            theta_vals = "  ".join(f"{val.item():<10.5f}" for val in theta_hat)
-            print(f"{iter_num:<6d}  {theta_vals}  {param_err[k].item():<10.5f}  {cum_time[k].item():<10.5f}")
-
         if rel_change[k].item() < conv_threshold:
             if enforce_fixed_iterations:
                 has_converged = True
-                print(f"*** {method_name} converged at iteration {iter_num} (holding parameters for remaining iterations) ***")
+                converged_iter = k
             else:
                 iter_count = k + 1
-                print(f"*** {method_name} converged at iteration {iter_num} ***")
+                converged_iter = k
                 break
 
     if status == "ok":
@@ -162,6 +159,20 @@ def run_identification_method(
 
     if status_msg:
         print(f"  {status_msg}")
+
+    if status == "ok":
+        if converged_iter is not None:
+            if enforce_fixed_iterations:
+                print(f"*** {method_name} converged at iteration {converged_iter} (holding parameters for remaining iterations) ***")
+            else:
+                print(f"*** {method_name} converged at iteration {converged_iter} ***")
+        print_iteration_table(
+            build_param_names(dims.na, dims.nb, dims.nf, dims.nd),
+            theta_hist.detach().cpu().numpy(),
+            param_err.detach().cpu().numpy(),
+            cum_time.detach().cpu().numpy(),
+            title=f"{method_name} Iteration Summary",
+        )
 
     return {
         "name": method_name,
@@ -211,8 +222,6 @@ def main() -> None:
     data = generate_example_data(dims, theta_true, lambda_g, burn_in, sigma_nu, device=device, dtype=dtype)
     r, nu, c = data["r"], data["nu"], data["c"]
     method_configs = load_json_config(config_file)["methods"]
-
-    print_result_header(build_param_names(dims.na, dims.nb, dims.nf, dims.nd))
 
     results = []
     for method_name in selected_methods:

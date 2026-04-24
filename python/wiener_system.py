@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
-import torchaudio
-from torch.func import jacrev
+from torch.func import jacfwd, jacrev
 
 
 @dataclass(frozen=True)
@@ -21,20 +20,10 @@ class WienerDimensions:
 
 
 def lfilter_1d(waveform: torch.Tensor, a_coeffs: torch.Tensor, b_coeffs: torch.Tensor) -> torch.Tensor:
-    waveform = waveform.reshape(1, -1)
-    a_coeffs = a_coeffs.reshape(1, -1)
-    b_coeffs = b_coeffs.reshape(1, -1)
-
-    # torchaudio.functional.lfilter requires numerator and denominator
-    # coefficient tensors to have the same trailing dimension. Zero-padding
-    # the shorter side preserves the intended transfer function.
-    target_len = max(a_coeffs.shape[-1], b_coeffs.shape[-1])
-    if a_coeffs.shape[-1] < target_len:
-        a_coeffs = torch.nn.functional.pad(a_coeffs, (0, target_len - a_coeffs.shape[-1]))
-    if b_coeffs.shape[-1] < target_len:
-        b_coeffs = torch.nn.functional.pad(b_coeffs, (0, target_len - b_coeffs.shape[-1]))
-
-    filtered = torchaudio.functional.lfilter(waveform, a_coeffs, b_coeffs, clamp=False, batching=True)
+    waveform_batched = waveform.reshape(1, 1, -1)
+    a_batched = a_coeffs.reshape(1, -1)
+    b_batched = b_coeffs.reshape(1, -1)
+    filtered = lfilter_via_fsm(waveform_batched, b_batched, a_batched)
     return filtered.reshape(-1)
 
 
@@ -91,10 +80,14 @@ def simulate_wiener(r: torch.Tensor, nu: torch.Tensor, theta: torch.Tensor, dims
     return beta + e
 
 
-def parameter_to_loss(theta: torch.Tensor, r: torch.Tensor, nu: torch.Tensor, c: torch.Tensor, dims: WienerDimensions) -> torch.Tensor:
+def params_to_loss(theta: torch.Tensor, r: torch.Tensor, nu: torch.Tensor, c: torch.Tensor, dims: WienerDimensions) -> torch.Tensor:
     c_hat = simulate_wiener(r, nu, theta, dims)
     residual = c - c_hat
-    return 0.5 * torch.sum(residual.pow(2))
+    return torch.mean(residual.pow(2))
+
+
+def parameter_to_loss(theta: torch.Tensor, r: torch.Tensor, nu: torch.Tensor, c: torch.Tensor, dims: WienerDimensions) -> torch.Tensor:
+    return params_to_loss(theta, r, nu, c, dims)
 
 
 def extract_loss_derivatives(
@@ -108,19 +101,22 @@ def extract_loss_derivatives(
     if max_order < 1 or max_order > 3:
         raise ValueError("Only derivative orders 1..3 are supported.")
 
-    loss_fn = lambda th: parameter_to_loss(th, r, nu, c, dims)
-    derivatives: dict[str, torch.Tensor] = {"loss": loss_fn(theta)}
-
+    loss_fn = lambda th: params_to_loss(th, r, nu, c, dims)
+    loss = loss_fn(theta)
     grad = jacrev(loss_fn)(theta)
-    derivatives["grad"] = grad
+
+    derivatives: dict[str, torch.Tensor] = {
+        "loss": loss.detach(),
+        "grad": grad.detach(),
+    }
 
     if max_order >= 2:
-        hess = jacrev(jacrev(loss_fn))(theta)
-        derivatives["hess"] = hess
+        hess = jacfwd(jacrev(loss_fn))(theta)
+        derivatives["hess"] = hess.detach()
 
     if max_order >= 3:
-        jac3 = jacrev(jacrev(jacrev(loss_fn)))(theta)
-        derivatives["jac3"] = jac3
+        jac3 = jacfwd(jacfwd(jacrev(loss_fn)))(theta)
+        derivatives["jac3"] = jac3.detach()
 
     return derivatives
 
@@ -211,3 +207,57 @@ def generate_example_data(
         "nu_full": nu_full,
         "c_full": c_full,
     }
+
+def lfilter_via_fsm(x: torch.Tensor, b: torch.Tensor, a: torch.Tensor = None):
+    """Use the frequency sampling method to approximate an IIR filter.
+    The filter will be applied along the final dimension of x.
+    Args:
+        x (torch.Tensor): Time domain signal with shape (bs, 1, timesteps)
+        b (torch.Tensor): Numerator coefficients with shape (bs, N).
+        a (torch.Tensor): Denominator coefficients with shape (bs, N).
+    Returns:
+        y (torch.Tensor): Filtered time domain signal with shape (bs, 1, timesteps)
+    """
+    bs, chs, seq_len = x.size()  # enforce shape
+    assert chs == 1
+
+    # round up to nearest power of 2 for FFT
+    fft_len = (2 * x.shape[-1]) - 1
+    n_fft = 1 << (fft_len - 1).bit_length()
+
+    # move coefficients to same device as x
+    b = b.type_as(x)
+
+    if a is None:
+        # directly compute FFT of numerator coefficients
+        H = torch.fft.rfft(b, n_fft)
+    else:
+        a = a.type_as(x)
+        # compute complex response as ratio of polynomials
+        H = fft_freqz(b, a, n_fft=n_fft)
+
+    # add extra dims to broadcast filter across
+    for _ in range(x.ndim - 2):
+        H = H.unsqueeze(1)
+
+    # apply as a FIR filter in the frequency domain
+    y = freqdomain_fir(x, H, n_fft)
+
+    # crop
+    y = y[..., : x.shape[-1]]
+
+    return y
+
+
+def fft_freqz(b, a, n_fft: int = 512):
+    B = torch.fft.rfft(b, n_fft)
+    A = torch.fft.rfft(a, n_fft)
+    H = B / A
+    return H
+
+
+def freqdomain_fir(x, H, n_fft):
+    X = torch.fft.rfft(x, n_fft)
+    Y = X * H.type_as(X)
+    y = torch.fft.irfft(Y, n_fft)
+    return y

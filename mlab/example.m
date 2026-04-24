@@ -38,6 +38,7 @@ K_max = 240;
 conv_threshold = 1e-8;
 sigma_nu = 0.10;
 norm_step_size = 1.15; % should be in the range (0,2]
+d_step_multiplier = 1.0;
 
 %% 3. Generate input / noise / true output
 burn_in = 100;
@@ -95,7 +96,10 @@ for k = 1:K_max
     delta = norm_step_size / max(norm(Phi_hat, 'fro')^2, eps);
 
     %% (c) Update parameter vector  Eq.(28)
-    theta_new = theta_hat + delta * (Phi_hat' * (c - Phi_hat * theta_hat));
+    update_dir = delta * (Phi_hat' * (c - Phi_hat * theta_hat));
+    step_scale = ones(n, 1);
+    step_scale((n - nd + 1):n) = d_step_multiplier;
+    theta_new = theta_hat + step_scale .* update_dir;
 
     %% Extract parameter estimates from theta_new
     a_hat_v = theta_new(1:na);

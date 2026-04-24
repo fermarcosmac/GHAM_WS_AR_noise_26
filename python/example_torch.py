@@ -6,11 +6,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from tqdm import tqdm
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from common import build_param_names, build_plot_labels, choose_dtype, default_device, print_result_header, set_seed
+from common import ROOT as PY_ROOT, build_param_names, build_plot_labels, choose_dtype, default_device, load_json_config, make_valid_method_key, now, print_iteration_table, set_seed
 from methods import method_parameter_update
 from wiener_system import WienerDimensions, build_state_matrix, generate_example_data, initialize_method_state, parameter_to_loss, simulate_wiener
 
@@ -23,25 +24,19 @@ def main() -> None:
     dims = WienerDimensions(na=2, nb=2, nf=2, nd=1)
     theta_true = torch.tensor([-0.31, -0.27, 0.23, 0.98, 0.32, -0.40], dtype=dtype, device=device)
 
-    lambda_g = 1000
+    lambda_g = 1000*2
     burn_in = 100
-    sigma_nu = 0.10
-    K_max = 240
+    sigma_nu = 0.10*5
+    K_max = 240*1
     conv_threshold = 1e-8
+    method_name = "WS-GNI"
+    config_file = PY_ROOT / "optim_configs.json"
 
+    # Generate measured data from the true system
     data = generate_example_data(dims, theta_true, lambda_g, burn_in, sigma_nu, device=device, dtype=dtype)
     r, nu, c = data["r"], data["nu"], data["c"]
 
-    method_cfg = {
-        "step_scale": 1.15,
-        "initialization": {
-            "mode": "physical",
-            "linear_init_a": [0.0, 0.0],
-            "linear_init_b": [1.0, 0.0],
-            "e_init_mode": "output_residual",
-            "theta_init": 1e-6,
-        },
-    }
+    method_cfg = load_json_config(config_file)["methods"][make_valid_method_key(method_name)]
 
     init_state = initialize_method_state(method_cfg, r, c, dims)
     alpha_hat = init_state["alpha_hat"]
@@ -52,13 +47,16 @@ def main() -> None:
     param_err = torch.zeros(K_max, dtype=dtype, device=device)
     rel_change = torch.zeros(K_max, dtype=dtype, device=device)
     rmse_hist = torch.zeros(K_max, dtype=dtype, device=device)
+    iter_time = torch.zeros(K_max, dtype=dtype, device=device)
+    cum_time = torch.zeros(K_max, dtype=dtype, device=device)
 
     param_names = build_param_names(dims.na, dims.nb, dims.nf, dims.nd)
-    print_result_header(param_names)
+    converged_iter: int | None = None
 
-    for k in range(K_max):
+    for k in tqdm(range(K_max), desc=method_name, unit="iter"):
+        t0 = now()
         phi_hat = build_state_matrix(alpha_hat, e_hat, r, dims)
-        theta_new, _ = method_parameter_update("WS-GGI", method_cfg, phi_hat, c, theta_hat, r=r, nu=nu, dims=dims, iter_idx=k)
+        theta_new, _ = method_parameter_update(method_name, method_cfg, phi_hat, c, theta_hat, r=r, nu=nu, dims=dims, iter_idx=k)
 
         residual_eq = c - phi_hat @ theta_new
         a_hat = theta_new[:dims.na]
@@ -78,21 +76,29 @@ def main() -> None:
         param_err[k] = torch.linalg.vector_norm(theta_hat - theta_true) / torch.linalg.vector_norm(theta_true) * 100.0
         c_sim = simulate_wiener(r, nu, theta_hat, dims)
         rmse_hist[k] = torch.sqrt(torch.mean((c - c_sim).pow(2)))
-
-        iter_num = k + 1
-        if iter_num in {5, 10, 15, 30, 50, 70, 100, 240} or iter_num == K_max:
-            theta_vals = "  ".join(f"{val.item():<10.5f}" for val in theta_hat)
-            print(f"{iter_num:<6d}  {theta_vals}  {param_err[k].item():<10.5f}")
+        iter_time[k] = now() - t0
+        cum_time[k] = iter_time[k] if k == 0 else cum_time[k - 1] + iter_time[k]
 
         if k > 0 and rel_change[k].item() < conv_threshold:
             theta_hist = theta_hist[:, : k + 1]
             param_err = param_err[: k + 1]
             rmse_hist = rmse_hist[: k + 1]
-            print(f"\n*** Converged at iteration {iter_num} ***")
+            iter_time = iter_time[: k + 1]
+            cum_time = cum_time[: k + 1]
+            converged_iter = k + 1
             break
 
     theta_np = theta_hat.detach().cpu().numpy()
     true_np = theta_true.detach().cpu().numpy()
+    theta_hist_np = theta_hist.detach().cpu().numpy()
+    param_err_np = param_err.detach().cpu().numpy()
+    rmse_np = rmse_hist.detach().cpu().numpy()
+    cum_time_np = cum_time.detach().cpu().numpy()
+
+    print()
+    if converged_iter is not None:
+        print(f"*** {method_name} converged at iteration {converged_iter} ***")
+    print_iteration_table(param_names, theta_hist_np, param_err_np, cum_time_np, title=f"{method_name} Iteration Summary")
     print("\n" + "=" * 60)
     print("FINAL PARAMETER ESTIMATES vs. TRUE VALUES")
     print("=" * 60)
@@ -106,16 +112,13 @@ def main() -> None:
 
     c_sim_final = simulate_wiener(r, nu, theta_hat, dims).detach().cpu().numpy()
     c_np = c.detach().cpu().numpy()
-    param_err_np = param_err.detach().cpu().numpy()
-    rmse_np = rmse_hist.detach().cpu().numpy()
-    theta_hist_np = theta_hist.detach().cpu().numpy()
     labels = build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd)
 
     fig = plt.figure(figsize=(10, 7.5))
     ax1 = fig.add_subplot(2, 2, (1, 2))
     ax1.plot(np.arange(lambda_g), c_np, "b-", lw=0.8, label="Observed Output")
-    ax1.plot(np.arange(lambda_g), c_sim_final, "r.", ms=3.0, label="Simulated Output / WS-GGI")
-    ax1.set_title("Observation and Simulation Output of WS-GGI")
+    ax1.plot(np.arange(lambda_g), c_sim_final, "r.", ms=3.0, label=f"Simulated Output / {method_name}")
+    ax1.set_title(f"Observation and Simulation Output of {method_name}")
     ax1.set_xlabel("Time")
     ax1.set_ylabel("c(t)")
     ax1.grid(True)
@@ -129,13 +132,13 @@ def main() -> None:
     ax2.grid(True)
 
     ax3 = fig.add_subplot(2, 2, 4)
-    ax3.plot(np.arange(1, len(rmse_np) + 1), rmse_np, "b-", lw=1.5, label="RMSE")
+    ax3.semilogy(np.arange(1, len(rmse_np) + 1), rmse_np, "b-", lw=1.5, label="RMSE")
     ax3.set_title("RMSE vs Iteration")
     ax3.set_xlabel("Iteration")
     ax3.set_ylabel("Error")
     ax3.grid(True)
     ax3.legend(loc="best")
-    fig.suptitle("WS-GGI: Wiener System with AR Noise - Example 1 (PyTorch)", fontsize=13, fontweight="bold")
+    fig.suptitle(f"{method_name}: Wiener System with AR Noise - Example 1 (PyTorch)", fontsize=13, fontweight="bold")
     fig.tight_layout()
 
     fig2, axes = plt.subplots(int(np.ceil(dims.n_params / 3)), 3, figsize=(9, 5.5))
@@ -151,7 +154,7 @@ def main() -> None:
         axes[i].legend(["Estimate", "True"], loc="best")
     for i in range(dims.n_params, len(axes)):
         axes[i].axis("off")
-    fig2.suptitle("Parameter Convergence Trajectories - WS-GGI (PyTorch)", fontsize=12, fontweight="bold")
+    fig2.suptitle(f"Parameter Convergence Trajectories - {method_name} (PyTorch)", fontsize=12, fontweight="bold")
     fig2.tight_layout()
     plt.show()
 

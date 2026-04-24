@@ -2,6 +2,7 @@
   "methods": {
     "WS_GGI": {
       "step_scale": 1.2e0,
+      "d_step_multiplier": 1.0,
       "initialization": {
         "mode": "physical",
         "linear_init_a": [0.0, 0.0],
@@ -31,6 +32,7 @@
     },
     "WS_GNI": {
       "step_size": 0.9,
+      "d_step_multiplier": 1.0,
       "hessian_regularization": 1e-8,
       "initialization": {
         "mode": "physical",

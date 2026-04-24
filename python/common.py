@@ -32,7 +32,23 @@ def make_valid_method_key(method_name: str) -> str:
 
 
 def default_device() -> torch.device:
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if not torch.cuda.is_available():
+        return torch.device("cpu")
+
+    device = torch.device("cuda")
+    try:
+        # Smoke test CUDA kernels used by this project (FFT + complex unary ops).
+        x = torch.randn(32, dtype=torch.float64, device=device)
+        _ = -torch.fft.rfft(x)
+        return device
+    except Exception as exc:
+        err_msg = str(exc)
+        if "nvrtc-builtins" in err_msg.lower():
+            print("CUDA detected, but NVRTC builtins are missing. Falling back to CPU.")
+        else:
+            brief = err_msg.splitlines()[0] if err_msg else exc.__class__.__name__
+            print(f"CUDA detected, but runtime smoke test failed ({brief}). Falling back to CPU.")
+        return torch.device("cpu")
 
 
 def choose_dtype() -> torch.dtype:
@@ -65,6 +81,39 @@ def print_result_header(param_names: list[str]) -> None:
         print(f"{name:<10}  ", end="")
     print(f"{'err(%)':<10}  {'time (s)':<10}")
     print("-" * (12 * (len(param_names) + 2)))
+
+
+def select_log_iterations(total_iterations: int, num_rows: int = 8) -> list[int]:
+    if total_iterations <= 0:
+        return []
+    if total_iterations <= num_rows:
+        return list(range(1, total_iterations + 1))
+    sampled = np.linspace(1, total_iterations, num_rows)
+    return sorted({int(round(val)) for val in sampled})
+
+
+def print_iteration_table(
+    param_names: list[str],
+    theta_hist: np.ndarray,
+    param_err: np.ndarray,
+    cum_time: np.ndarray | None = None,
+    *,
+    title: str | None = None,
+    num_rows: int = 8,
+) -> None:
+    total_iterations = theta_hist.shape[1]
+    selected_iters = select_log_iterations(total_iterations, num_rows=num_rows)
+    if not selected_iters:
+        return
+
+    if title:
+        print(title)
+    print_result_header(param_names)
+    for iter_num in selected_iters:
+        idx = iter_num - 1
+        theta_vals = "  ".join(f"{val:<10.5f}" for val in theta_hist[:, idx])
+        time_val = 0.0 if cum_time is None else float(cum_time[idx])
+        print(f"{iter_num:<6d}  {theta_vals}  {float(param_err[idx]):<10.5f}  {time_val:<10.5f}")
 
 
 def plot_method_metrics(results: list[dict[str, Any]]) -> None:
