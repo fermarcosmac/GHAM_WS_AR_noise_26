@@ -49,7 +49,7 @@ param_names = build_param_names(na, nb, nf, nd);
 param_labels = build_plot_labels(na, nb, nf, nd);
 
 %% 2. Shared experiment settings
-lambda_g = 1000*100;                % more data, better results (less bias)
+lambda_g = 1000*2;                % more data, better results (less bias)
 K_max = 2000;
 conv_threshold = 1e-8;
 sigma_nu = 0.10;                    % noise power changes the bias in parameter estimates
