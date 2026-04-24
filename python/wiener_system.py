@@ -118,6 +118,8 @@ def extract_loss_derivatives(
         jac3 = jacfwd(jacfwd(jacrev(loss_fn)))(theta)
         derivatives["jac3"] = jac3.detach()
 
+    # TODO: implement higher order derivatives when needed
+
     return derivatives
 
 

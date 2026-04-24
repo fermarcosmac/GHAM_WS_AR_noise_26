@@ -24,7 +24,7 @@ def _build_step_scale_vector(
 def method_parameter_update(
     method_name: str,
     method_cfg: dict[str, Any],
-    phi_hat: torch.Tensor,
+    phi_hat: torch.Tensor | None,
     c: torch.Tensor,
     theta_hat: torch.Tensor,
     *,
@@ -44,6 +44,26 @@ def method_parameter_update(
 
     if name == "WS-GNI":
         theta_new, derivatives = ws_gni_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
+        aux_state["derivatives"] = derivatives
+        return theta_new, aux_state
+
+    if name in {"WS-GGHAM-1-DH", "WS_GGHAM_1_DH"}:
+        theta_new, derivatives = ws_ggham_1_dh_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
+        aux_state["derivatives"] = derivatives
+        return theta_new, aux_state
+
+    if name in {"WS-GGHAM-2-I", "WS_GGHAM_2_I"}:
+        theta_new, derivatives = ws_ggham_2_i_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
+        aux_state["derivatives"] = derivatives
+        return theta_new, aux_state
+
+    if name in {"WS-GGHAM-2-DH", "WS_GGHAM_2_DH"}:
+        theta_new, derivatives = ws_ggham_2_dh_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
+        aux_state["derivatives"] = derivatives
+        return theta_new, aux_state
+
+    if name in {"WS-GGHAM-2-H", "WS_GGHAM_2_H"}:
+        theta_new, derivatives = ws_ggham_2_h_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
         aux_state["derivatives"] = derivatives
         return theta_new, aux_state
 
@@ -114,4 +134,139 @@ def ws_gni_update(
     theta_new = theta_hat - eta * step_scale * direction
     derivatives["hess_reg"] = hessian_reg.detach()
     derivatives["newton_direction"] = direction.detach()
+    return theta_new.detach().clone(), derivatives
+
+
+def ws_ggham_1_dh_update(
+    theta_hat: torch.Tensor,
+    method_cfg: dict[str, Any],
+    *,
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    c: torch.Tensor,
+    dims,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
+    lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
+
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    gradient = derivatives["grad"]
+    hessian = derivatives["hess"]
+
+    # GHAM gradient-root convention uses +Phi'r in linearized form.
+    gradient_root = -gradient
+    diag_h = torch.diagonal(hessian) + lambda_reg
+    safe_diag_h = torch.where(diag_h.abs() > 1e-12, diag_h, torch.full_like(diag_h, 1e-12))
+    direction = gradient_root / safe_diag_h
+
+    step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
+    theta_new = theta_hat + eta * step_scale * direction
+
+    derivatives["gradient_root"] = gradient_root.detach()
+    derivatives["diag_hess_reg"] = safe_diag_h.detach()
+    derivatives["gham_direction"] = direction.detach()
+    return theta_new.detach().clone(), derivatives
+
+
+def ws_ggham_2_i_update(
+    theta_hat: torch.Tensor,
+    method_cfg: dict[str, Any],
+    *,
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    c: torch.Tensor,
+    dims,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
+    lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
+
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    gradient = derivatives["grad"]
+    hessian = derivatives["hess"]
+
+    step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
+
+    # TODO: use step_scale (different per each parameter)
+    theta_new = theta_hat - (2*eta*torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device) - eta**2*hessian) @ gradient
+
+    derivatives["gradient"] = gradient.detach()
+    derivatives["hess"] = hessian.detach()
+    return theta_new.detach().clone(), derivatives
+
+
+def ws_ggham_2_dh_update(
+    theta_hat: torch.Tensor,
+    method_cfg: dict[str, Any],
+    *,
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    c: torch.Tensor,
+    dims,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
+    lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
+
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    gradient = derivatives["grad"]
+    hessian = derivatives["hess"]
+
+    gradient_root = -gradient
+    diag_h = torch.diagonal(hessian) + lambda_reg
+    safe_diag_h = torch.where(diag_h.abs() > 1e-12, diag_h, torch.full_like(diag_h, 1e-12))
+
+    theta_1 = eta * (gradient_root / safe_diag_h)
+    delta = 2.0 * theta_1 - eta * ((hessian @ theta_1) / safe_diag_h)
+
+    step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
+    theta_new = theta_hat + step_scale * delta
+
+    derivatives["gradient_root"] = gradient_root.detach()
+    derivatives["diag_hess_reg"] = safe_diag_h.detach()
+    derivatives["theta_1"] = theta_1.detach()
+    derivatives["gham_delta"] = delta.detach()
+    return theta_new.detach().clone(), derivatives
+
+
+def ws_ggham_2_h_update(
+    theta_hat: torch.Tensor,
+    method_cfg: dict[str, Any],
+    *,
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    c: torch.Tensor,
+    dims,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
+    lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
+
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    gradient = derivatives["grad"]
+    hessian = derivatives["hess"]
+
+    hessian_reg = hessian + lambda_reg * torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device)
+    gradient_root = -gradient
+
+    try:
+        h_inv_g = torch.linalg.solve(hessian_reg, gradient_root.unsqueeze(-1)).squeeze(-1)
+    except RuntimeError:
+        h_inv_g = torch.linalg.lstsq(hessian_reg, gradient_root.unsqueeze(-1)).solution.squeeze(-1)
+
+    theta_1 = eta * h_inv_g
+
+    h_theta_1 = hessian @ theta_1
+    try:
+        correction = torch.linalg.solve(hessian_reg, h_theta_1.unsqueeze(-1)).squeeze(-1)
+    except RuntimeError:
+        correction = torch.linalg.lstsq(hessian_reg, h_theta_1.unsqueeze(-1)).solution.squeeze(-1)
+
+    delta = 2.0 * theta_1 - eta * correction
+
+    step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
+    theta_new = theta_hat + step_scale * delta
+
+    derivatives["gradient_root"] = gradient_root.detach()
+    derivatives["hess_reg"] = hessian_reg.detach()
+    derivatives["theta_1"] = theta_1.detach()
+    derivatives["h_correction"] = correction.detach()
+    derivatives["gham_delta"] = delta.detach()
     return theta_new.detach().clone(), derivatives

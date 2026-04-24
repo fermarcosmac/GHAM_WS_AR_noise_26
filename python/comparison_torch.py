@@ -26,7 +26,7 @@ from common import (
     set_seed,
 )
 from methods import method_parameter_update
-from wiener_system import WienerDimensions, build_state_matrix, generate_example_data, initialize_method_state, lfilter_1d, simulate_wiener
+from wiener_system import WienerDimensions, generate_example_data, initialize_method_state, simulate_wiener
 
 
 def run_identification_method(
@@ -44,8 +44,6 @@ def run_identification_method(
     enforce_fixed_iterations: bool = False,
 ) -> dict[str, Any]:
     init_state = initialize_method_state(method_cfg, r, c, dims)
-    alpha_hat = init_state["alpha_hat"]
-    e_hat = init_state["e_hat"]
     theta_hat = init_state["theta_hat"]
 
     theta_hist = torch.zeros((dims.n_params, K_max), dtype=r.dtype, device=r.device)
@@ -81,11 +79,10 @@ def run_identification_method(
             continue
 
         t0 = now()
-        phi_hat = build_state_matrix(alpha_hat, e_hat, r, dims)
         theta_new, aux_state = method_parameter_update(
             method_name,
             method_cfg,
-            phi_hat,
+            None,
             c,
             theta_hat,
             r=r,
@@ -103,18 +100,6 @@ def run_identification_method(
             status_msg = aux_state["message"]
             iter_count = k
             break
-
-        residual_eq = c - phi_hat @ theta_new
-        a_hat = theta_new[:dims.na]
-        b_hat = theta_new[dims.na:dims.na + dims.nb]
-        d_hat = theta_new[dims.na + dims.nb + (dims.nf - 1):]
-
-        den_ar_hat = torch.cat([torch.ones(1, dtype=r.dtype, device=r.device), d_hat])
-        e_hat = lfilter_1d(residual_eq, den_ar_hat, torch.ones(1, dtype=r.dtype, device=r.device))
-
-        den_lin_hat = torch.cat([torch.ones(1, dtype=r.dtype, device=r.device), a_hat])
-        num_lin_hat = torch.cat([torch.zeros(1, dtype=r.dtype, device=r.device), b_hat])
-        alpha_hat = lfilter_1d(r, den_lin_hat, num_lin_hat)
 
         rel_change[k] = torch.linalg.vector_norm(theta_new - theta_hat) / (torch.linalg.vector_norm(theta_hat) + 1e-15)
         theta_hat = theta_new
@@ -205,6 +190,7 @@ def main() -> None:
         "WS-GGHAM-1-dH",
         "WS-GGHAM-2-I",
         "WS-GGHAM-2-dH",
+        "WS-GGHAM-2-H",
         "WS-LGHAM-1-TIK",
         "WS-LGHAM-3-TIK",
     ]
@@ -212,10 +198,10 @@ def main() -> None:
     dims = WienerDimensions(na=2, nb=2, nf=2, nd=1)
     theta_true = torch.tensor([-0.31, -0.27, 0.23, 0.98, 0.32, -0.40], dtype=dtype, device=device)
 
-    lambda_g = 1000
+    lambda_g = 1000*2
     K_max = 240
     conv_threshold = 1e-8
-    sigma_nu = 0.10
+    sigma_nu = 0.10*5
     burn_in = 100
     enforce_fixed_iterations = False
 

@@ -29,7 +29,7 @@ def main() -> None:
     sigma_nu = 0.10*5
     K_max = 240*1
     conv_threshold = 1e-8
-    method_name = "WS-GNI"
+    method_name = "WS-GGHAM-2-I"
     config_file = PY_ROOT / "optim_configs.json"
 
     # Generate measured data from the true system
