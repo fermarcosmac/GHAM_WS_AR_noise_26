@@ -26,10 +26,10 @@ def main() -> None:
 
     lambda_g = 1000*2
     burn_in = 100
-    sigma_nu = 0.10*1
+    sigma_nu = 0.10*5   # Noise power essentially determines the step size scale needed for the d parameter. More noise -> lower step size.
     K_max = 240*1
     conv_threshold = 1e-8
-    method_name = "WS-GGHAM-2-H"
+    method_name = "WS-LGHAM-3-TIK"
     config_file = PY_ROOT / "optim_configs.json"
 
     # Generate measured data from the true system

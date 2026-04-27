@@ -201,7 +201,7 @@ def main() -> None:
     lambda_g = 1000*2
     K_max = 240
     conv_threshold = 1e-8
-    sigma_nu = 0.10*5
+    sigma_nu = 0.10*1
     burn_in = 100
     enforce_fixed_iterations = False
 

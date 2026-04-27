@@ -67,6 +67,16 @@ def method_parameter_update(
         aux_state["derivatives"] = derivatives
         return theta_new, aux_state
 
+    if name in {"WS-LGHAM-1-TIK", "WS_LGHAM_1_TIK"}:
+        theta_new, derivatives = ws_lgham_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims, order=1)
+        aux_state["derivatives"] = derivatives
+        return theta_new, aux_state
+
+    if name in {"WS-LGHAM-3-TIK", "WS_LGHAM_3_TIK"}:
+        theta_new, derivatives = ws_lgham_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims, order=3)
+        aux_state["derivatives"] = derivatives
+        return theta_new, aux_state
+
     derivative_order = int(method_cfg.get("derivative_order", 1))
     aux_state["derivatives"] = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=min(derivative_order, 3))
     aux_state["status"] = "not_implemented"
@@ -267,4 +277,83 @@ def ws_ggham_2_h_update(
     derivatives["theta_1"] = theta_1.detach()
     derivatives["h_correction"] = correction.detach()
     derivatives["gham_delta"] = delta.detach()
+    return theta_new.detach().clone(), derivatives
+
+
+def _solve_loss_root_inverse(
+    gradient_root: torch.Tensor,
+    rhs_scalar: torch.Tensor,
+    method_cfg: dict[str, Any],
+) -> torch.Tensor:
+    solver = str(method_cfg.get("inverse_solver", "tikhonov")).lower()
+    rhs = rhs_scalar.to(dtype=gradient_root.dtype, device=gradient_root.device)
+    gg = torch.dot(gradient_root, gradient_root)
+
+    if solver == "pinv":
+        if gg.abs().item() <= 1e-15:
+            return torch.zeros_like(gradient_root)
+        return gradient_root * (rhs / gg)
+
+    if solver == "tikhonov":
+        lambda_reg = float(method_cfg.get("tikhonov_lambda", 0.0))
+        denom = gg + lambda_reg
+        if denom.abs().item() <= 1e-15:
+            return torch.zeros_like(gradient_root)
+        return gradient_root * (rhs / denom)
+
+    raise ValueError(f"Unknown WS-LGHAM inverse_solver '{solver}'.")
+
+
+def _get_eps0(method_cfg: dict[str, Any], *, default: float = 0.0) -> float:
+    eps0 = method_cfg.get("eps_0", method_cfg.get("epsilon0", default))
+    if isinstance(eps0, str) and eps0.lower() == "automatic":
+        return float(method_cfg.get("best_error_so_far", default))
+    return float(eps0)
+
+
+def ws_lgham_update(
+    theta_hat: torch.Tensor,
+    method_cfg: dict[str, Any],
+    *,
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    c: torch.Tensor,
+    dims,
+    order: int,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    if order < 1 or order > 3:
+        raise ValueError("WS-LGHAM supports only orders 1 to 3.")
+
+    eta = float(method_cfg.get("eta", 0.05))
+    eps0 = _get_eps0(method_cfg, default=0.0)
+
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    loss = derivatives["loss"]
+    gradient = derivatives["grad"]
+    hessian = derivatives["hess"]
+
+    # Gradient-root convention matches the linearized MATLAB formulas.
+    rhs1 = loss - eps0
+    theta_1 = - eta * _solve_loss_root_inverse(gradient, rhs1, method_cfg)
+    delta = theta_1.clone()
+
+    theta_2 = torch.zeros_like(theta_hat)
+    if order >= 2:
+        rhs2 = torch.dot(gradient, theta_1)
+        theta_2 = theta_1 - eta * _solve_loss_root_inverse(gradient, rhs2, method_cfg)
+        delta = delta + theta_2
+
+    if order >= 3:
+        rhs3 = 0.5 * torch.dot(theta_1, hessian @ theta_1) + torch.dot(gradient, theta_2)
+        theta_3 = theta_2 - eta * _solve_loss_root_inverse(gradient, rhs3, method_cfg)
+        delta = delta + theta_3
+        derivatives["theta_3"] = theta_3.detach()
+
+    step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
+    theta_new = theta_hat + step_scale * delta
+
+    derivatives["gradient"] = gradient.detach()
+    derivatives["theta_1"] = theta_1.detach()
+    derivatives["theta_2"] = theta_2.detach()
+    derivatives["lgham_delta"] = delta.detach()
     return theta_new.detach().clone(), derivatives
