@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,84 @@ from common import (
 )
 from methods import method_parameter_update
 from wiener_system import WienerDimensions, generate_example_data, initialize_method_state, simulate_wiener
+
+
+def save_comparison_results(
+    output_file: Path,
+    results: list[dict[str, Any]],
+    *,
+    selected_methods: list[str],
+    dims: WienerDimensions,
+    theta_true: torch.Tensor,
+    lambda_g: int,
+    K_max: int,
+    conv_threshold: float,
+    sigma_nu: float,
+    burn_in: int,
+    enforce_fixed_iterations: bool,
+) -> None:
+    try:
+        from scipy.io import savemat
+    except ImportError as exc:
+        raise RuntimeError("Saving MATLAB-compatible results requires scipy. Install scipy and rerun this script.") from exc
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    param_names = build_param_names(dims.na, dims.nb, dims.nf, dims.nd)
+    param_labels = build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd)
+    result_fields = (
+        "name",
+        "status",
+        "status_msg",
+        "theta_hat",
+        "theta_hist",
+        "param_err",
+        "rel_change",
+        "rmse_hist",
+        "iter_time",
+        "cum_time",
+        "final_err",
+        "total_time",
+        "iterations",
+    )
+    mat_results = np.empty((1, len(results)), dtype=[(field, "O") for field in result_fields])
+
+    for idx, result in enumerate(results):
+        for field in result_fields:
+            value = result[field]
+            if field == "theta_hat":
+                value = np.asarray(value, dtype=float).reshape(-1, 1)
+            elif field in {"param_err", "rel_change", "rmse_hist", "iter_time", "cum_time"}:
+                value = np.asarray(value, dtype=float).reshape(-1, 1)
+            elif field == "theta_hist":
+                value = np.asarray(value, dtype=float)
+            mat_results[field][0, idx] = value
+
+    experiment = {
+        "seed": 42,
+        "lambda_g": lambda_g,
+        "K_max": K_max,
+        "conv_threshold": conv_threshold,
+        "sigma_nu": sigma_nu,
+        "burn_in": burn_in,
+        "enforce_fixed_iterations": enforce_fixed_iterations,
+        "dims": {"na": dims.na, "nb": dims.nb, "nf": dims.nf, "nd": dims.nd},
+        "theta_true": theta_true.detach().cpu().numpy().reshape(-1, 1),
+        "param_names": np.asarray(param_names, dtype=object).reshape(1, -1),
+        "param_labels": np.asarray(param_labels, dtype=object).reshape(1, -1),
+        "selected_methods": np.asarray(selected_methods, dtype=object).reshape(1, -1),
+    }
+
+    savemat(
+        output_file,
+        {
+            "parametrization": "FSM",
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "experiment": experiment,
+            "results": mat_results,
+        },
+        long_field_names=True,
+    )
+    print(f"\nSaved FSM results to: {output_file}")
 
 
 def run_identification_method(
@@ -204,6 +283,8 @@ def main() -> None:
     sigma_nu = 0.10*1
     burn_in = 100
     enforce_fixed_iterations = False
+    make_local_plots = True
+    results_file = PY_ROOT.parent / "results" / "comparison_fsm.mat"
 
     data = generate_example_data(dims, theta_true, lambda_g, burn_in, sigma_nu, device=device, dtype=dtype)
     r, nu, c = data["r"], data["nu"], data["c"]
@@ -241,13 +322,30 @@ def main() -> None:
             final_d = result["theta_hat"][-1]
         print(f"{result['name']:<14} {result['status']:<12} {result['final_err']:<12.5f} {final_d:<12.5f} {result['total_time']:<12.5f}")
 
-    plot_method_metrics(results)
-    plot_parameter_trajectories(results, theta_true.detach().cpu().numpy(), build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd))
+    save_comparison_results(
+        results_file,
+        results,
+        selected_methods=selected_methods,
+        dims=dims,
+        theta_true=theta_true,
+        lambda_g=lambda_g,
+        K_max=K_max,
+        conv_threshold=conv_threshold,
+        sigma_nu=sigma_nu,
+        burn_in=burn_in,
+        enforce_fixed_iterations=enforce_fixed_iterations,
+    )
 
-    import matplotlib.pyplot as plt
+    if make_local_plots:
+        plot_method_metrics(results)
+        plot_parameter_trajectories(results, theta_true.detach().cpu().numpy(), build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd))
 
-    plt.show()
-    print("\nDone. All figures generated.")
+        import matplotlib.pyplot as plt
+
+        plt.show()
+        print("\nDone. All figures generated.")
+    else:
+        print("\nDone. Results saved for MATLAB plotting.")
 
 
 if __name__ == "__main__":

@@ -7,9 +7,12 @@
 
 clear; clc; close all;
 rng(42);
+script_dir = fileparts(mfilename('fullpath'));
 
 %% 0. Experiment configuration
-config_file = 'optim_configs.json';
+config_file = fullfile(script_dir, 'optim_configs.json');
+make_local_plots = true;
+results_file = fullfile(script_dir, '..', 'results', 'comparison_pl.mat');
 
 % List the methods to compare here. Unknown methods or placeholder methods
 % are reported and skipped gracefully.
@@ -121,10 +124,17 @@ for m = 1:numel(results)
 end
 
 %% 7. Plots
-plot_method_metrics(results);
-plot_parameter_trajectories(results, theta_true, param_labels);
+save_comparison_results(results_file, results, selected_methods, ...
+    na, nb, nf, nd, theta_true, param_names, param_labels, ...
+    lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations);
 
-fprintf('\nDone. All figures generated.\n');
+if make_local_plots
+    plot_method_metrics(results);
+    plot_parameter_trajectories(results, theta_true, param_labels);
+    fprintf('\nDone. Results saved and local figures generated.\n');
+else
+    fprintf('\nDone. Results saved for MATLAB plotting.\n');
+end
 
 
 %% Local functions
@@ -771,6 +781,68 @@ labels = [arrayfun(@(i) sprintf('a_%d', i), 1:na, 'UniformOutput', false), ...
           arrayfun(@(i) sprintf('b_%d', i), 1:nb, 'UniformOutput', false), ...
           arrayfun(@(i) sprintf('f_%d', i), 2:nf, 'UniformOutput', false), ...
           arrayfun(@(i) sprintf('d_%d', i), 1:nd, 'UniformOutput', false)];
+end
+
+function save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations)
+out_dir = fileparts(output_file);
+if ~exist(out_dir, 'dir')
+    mkdir(out_dir);
+end
+
+parametrization = 'PL';
+generated_at = char(datetime('now', 'Format', 'yyyy-MM-dd''T''HH:mm:ss'));
+experiment = struct( ...
+    'seed', 42, ...
+    'lambda_g', lambda_g, ...
+    'K_max', K_max, ...
+    'conv_threshold', conv_threshold, ...
+    'sigma_nu', sigma_nu, ...
+    'burn_in', burn_in, ...
+    'enforce_fixed_iterations', logical(enforce_fixed_iterations), ...
+    'dims', struct('na', na, 'nb', nb, 'nf', nf, 'nd', nd), ...
+    'theta_true', theta_true(:), ...
+    'param_names', {param_names}, ...
+    'param_labels', {param_labels}, ...
+    'selected_methods', {selected_methods});
+
+result_template = struct( ...
+    'name', '', ...
+    'status', '', ...
+    'status_msg', '', ...
+    'theta_hat', [], ...
+    'theta_hist', [], ...
+    'param_err', [], ...
+    'rel_change', [], ...
+    'rmse_hist', [], ...
+    'iter_time', [], ...
+    'cum_time', [], ...
+    'final_err', NaN, ...
+    'total_time', NaN, ...
+    'iterations', 0);
+
+if isempty(results_in)
+    results = result_template([]);
+else
+    results = repmat(result_template, 1, numel(results_in));
+    for m = 1:numel(results_in)
+        results(m).name = results_in(m).name;
+        results(m).status = results_in(m).status;
+        results(m).status_msg = results_in(m).status_msg;
+        results(m).theta_hat = results_in(m).theta_hat(:);
+        results(m).theta_hist = results_in(m).theta_hist;
+        results(m).param_err = results_in(m).param_err(:);
+        results(m).rel_change = results_in(m).rel_change(:);
+        results(m).rmse_hist = results_in(m).RMSE_hist(:);
+        results(m).iter_time = results_in(m).iter_time(:);
+        results(m).cum_time = results_in(m).cum_time(:);
+        results(m).final_err = results_in(m).final_err;
+        results(m).total_time = results_in(m).total_time;
+        results(m).iterations = results_in(m).iterations;
+    end
+end
+
+save(output_file, 'parametrization', 'generated_at', 'experiment', 'results', '-v7');
+fprintf('\nSaved PL results to: %s\n', output_file);
 end
 
 function plot_method_metrics(results)
