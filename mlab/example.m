@@ -16,32 +16,45 @@
 %   theta    = [a1,a2,b1,b2,f2,d1] = [-0.31,-0.27,0.23,0.98,0.32,-0.40]
 
 clear; clc; close all;
-rng(42);
+
+script_dir = fileparts(mfilename('fullpath'));
+repo_root = fullfile(script_dir, '..');
+experiment_name = 'example_1';
+experiment_cfg = load_experiment_config(repo_root, experiment_name);
+seed = get_optional_field(experiment_cfg, 'seed', 42);
+method_name = get_optional_field(experiment_cfg, 'matlab_example_method', ...
+    get_optional_field(experiment_cfg, 'example_method', 'WS-GGI'));
+config_file = fullfile(script_dir, get_optional_field(experiment_cfg, 'matlab_optim_config', 'optim_configs.json'));
+method_configs = load_method_configs(config_file);
+method_cfg = get_method_config(method_configs, method_name);
+rng(seed);
 
 %% 1. True system parameters
-na = 2;
-nb = 2;
-nf = 2;
-nd = 1;
+system_cfg = experiment_cfg.system;
+na = system_cfg.na;
+nb = system_cfg.nb;
+nf = system_cfg.nf;
+nd = get_optional_field(system_cfg, 'nd', 0);
 n  = na + nb + (nf - 1) + nd;
 
-a_true = [-0.31; -0.27];
-b_true = [ 0.23;  0.98];
-f_true = 0.32;
-d_true = -0.40;
-
-theta_true = [a_true; b_true; f_true; d_true];
+theta_true = system_cfg.theta_true(:);
+assert(numel(theta_true) == n, 'theta_true has %d entries, but dimensions require %d.', numel(theta_true), n);
+a_true = theta_true(1:na);
+b_true = theta_true(na + 1:na + nb);
+f_true = theta_true(na + nb + 1:na + nb + (nf - 1));
+d_true = theta_true(na + nb + (nf - 1) + 1:end);
 
 %% 2. Algorithm hyper-parameters
-lambda_g = 1000;
-K_max = 240;
-conv_threshold = 1e-8;
-sigma_nu = 0.10;
-norm_step_size = 1.15; % should be in the range (0,2]
-d_step_multiplier = 1.0;
+settings = experiment_cfg.settings;
+lambda_g = settings.lambda_g;
+K_max = settings.K_max;
+conv_threshold = settings.conv_threshold;
+sigma_nu = settings.sigma_nu;
+burn_in = settings.burn_in;
+norm_step_size = get_optional_field(method_cfg, 'step_scale', 1.15); % should be in the range (0,2]
+d_step_multiplier = get_optional_field(method_cfg, 'd_step_multiplier', 1.0);
 
 %% 3. Generate input / noise / true output
-burn_in = 100;
 N_total = lambda_g + burn_in;
 r_full = randn(N_total, 1);
 nu_full = sigma_nu * randn(N_total, 1);
@@ -165,10 +178,10 @@ figure('Name', 'WS-GGI Results', 'Color', 'w', 'Position', [100 80 1000 750]);
 
 subplot(2, 2, [1 2]);
 plot(1:lambda_g, c, 'b-', 'LineWidth', 0.8, 'DisplayName', 'Observed Output'); hold on;
-plot(1:lambda_g, c_sim_final, 'r.', 'MarkerSize', 4, 'DisplayName', 'Simulated Output / WS-GGI');
+plot(1:lambda_g, c_sim_final, 'r.', 'MarkerSize', 4, 'DisplayName', ['Simulated Output / ', method_name]);
 legend('Location', 'best'); grid on;
 xlabel('Time'); ylabel('c(t)');
-title('Observation and Simulation Output of WS-GGI');
+title(['Observation and Simulation Output of ', method_name]);
 xlim([1 lambda_g]);
 
 subplot(2, 2, 3);
@@ -186,7 +199,7 @@ plot(1:K_max, MAE_hist(1:K_max), 'r--', 'LineWidth', 1.5, 'DisplayName', 'MAE');
 grid on; legend; xlabel('Iteration'); ylabel('Error');
 title('RMSE and MAE vs Iteration');
 
-sgtitle('WS-GGI: Wiener System with AR Noise - Example 1', 'FontSize', 13, 'FontWeight', 'bold');
+sgtitle([method_name, ': ', experiment_name], 'FontSize', 13, 'FontWeight', 'bold');
 
 %% 7. Parameter trajectory plot
 figure('Name', 'Parameter Trajectories', 'Color', 'w', 'Position', [150 100 900 550]);
@@ -202,12 +215,43 @@ for i = 1:n
     title(['Parameter ', param_labels{i}]);
     legend('Estimate', 'True', 'Location', 'best');
 end
-sgtitle('Parameter Convergence Trajectories - WS-GGI', 'FontSize', 12, 'FontWeight', 'bold');
+sgtitle(['Parameter Convergence Trajectories - ', method_name, ' / ', experiment_name], 'FontSize', 12, 'FontWeight', 'bold');
 
 fprintf('\nDone. All figures generated.\n');
 
 
 %% Local functions
+function cfg = load_experiment_config(repo_root, experiment_name)
+config_file = fullfile(repo_root, 'configs', [experiment_name, '.json']);
+if exist(config_file, 'file') ~= 2
+    config_file = fullfile(repo_root, 'configs', [experiment_name, '.JSON']);
+end
+assert(exist(config_file, 'file') == 2, 'Could not find experiment config file for experiment "%s".', experiment_name);
+cfg = jsondecode(fileread(config_file));
+end
+
+function value = get_optional_field(s, name, default_value)
+if isfield(s, name)
+    value = s.(name);
+else
+    value = default_value;
+end
+end
+
+function configs = load_method_configs(config_file)
+assert(exist(config_file, 'file') == 2, 'Could not find optimizer config file: %s', config_file);
+raw_text = fileread(config_file);
+decoded = jsondecode(raw_text);
+assert(isfield(decoded, 'methods'), 'JSON config must contain a "methods" field.');
+configs = decoded.methods;
+end
+
+function method_cfg = get_method_config(configs, method_name)
+field_name = matlab.lang.makeValidName(method_name);
+assert(isfield(configs, field_name), 'No config entry found for method "%s".', method_name);
+method_cfg = configs.(field_name);
+end
+
 function Phi_hat = build_state_matrix(alpha_hat, e_hat, r, na, nb, nf, nd)
 T = numel(r);
 

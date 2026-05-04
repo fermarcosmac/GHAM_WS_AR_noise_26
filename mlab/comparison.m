@@ -9,7 +9,7 @@ clear; clc; close all;
 script_dir = fileparts(mfilename('fullpath'));
 
 %% 0. Experiment configuration
-experiment_name = 'example_CSTR';
+experiment_name = 'example_1';
 repo_root = fullfile(script_dir, '..');
 experiment_cfg = load_experiment_config(repo_root, experiment_name);
 mode = upper(char(get_optional_field(experiment_cfg, 'mode', 'EXAMPLE')));

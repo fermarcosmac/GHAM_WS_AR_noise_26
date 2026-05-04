@@ -8,7 +8,7 @@ clear; clc; close all;
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
-experiment_name = 'example_CSTR';
+experiment_name = 'example_1';
 mode = 'EXAMPLE';  % EXAMPLE or MONTECARLO
 data_files = { ...
     fullfile(repo_root, 'results', experiment_name, sprintf('comparison_fsm_%s.mat', lower(mode))), ...
@@ -69,6 +69,10 @@ for i = 1:numel(datasets)
         fig_box = plot_montecarlo_boxplots(datasets(i));
         box_filename = sprintf('montecarlo_parameter_boxplots_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
         export_if_requested(fig_box, fig_dir, box_filename, export_figures);
+
+        fig_err_box = plot_montecarlo_final_error_boxplots(datasets(i));
+        err_box_filename = sprintf('montecarlo_final_error_boxplots_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+        export_if_requested(fig_err_box, fig_dir, err_box_filename, export_figures);
     end
 end
 
@@ -91,22 +95,23 @@ raw_results = loaded.results;
 if iscell(raw_results)
     raw_results = [raw_results{:}];
 end
+ds.results = raw_results(:).';
+end
 
 function fig = plot_montecarlo_summary(dataset, method_names, colors)
-summary = dataset.mc_summary;
 parametrization = dataset.parametrization;
 fig = figure('Name', sprintf('%s Monte Carlo Summary', parametrization), ...
     'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 18 8]);
 tl = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax1 = nexttile(tl);
-plot_mc_axis(ax1, summary, method_names, colors, 'param_err_mean', 'param_err_stderr');
+plot_mc_axis(ax1, dataset, method_names, colors, 'param_err_mean', 'param_err_stderr');
 set(ax1, 'YScale', 'log');
 title(ax1, sprintf('Mean parameter error (%s)', parametrization));
 ylabel(ax1, '$e_\theta$ (\%)');
 
 ax2 = nexttile(tl);
-plot_mc_axis(ax2, summary, method_names, colors, 'rmse_mean', 'rmse_stderr');
+plot_mc_axis(ax2, dataset, method_names, colors, 'rmse_mean', 'rmse_stderr');
 set(ax2, 'YScale', 'log');
 title(ax2, sprintf('Mean RMSE (%s)', parametrization));
 ylabel(ax2, 'RMSE');
@@ -115,8 +120,9 @@ legend(ax1, 'Location', 'best', 'FontSize', 8);
 title(tl, sprintf('%s Monte Carlo Curves', parametrization), 'FontWeight', 'bold');
 end
 
-function plot_mc_axis(ax, summary, method_names, colors, mean_field, stderr_field)
+function plot_mc_axis(ax, dataset, method_names, colors, mean_field, stderr_field)
 hold(ax, 'on');
+summary = dataset.mc_summary;
 mc_methods = cellstr_value(summary.method_names);
 y_mean_all = double(summary.(mean_field));
 y_stderr_all = double(summary.(stderr_field));
@@ -126,9 +132,12 @@ if size(y_mean_all, 1) ~= numel(mc_methods)
 end
 
 for m = 1:numel(mc_methods)
+    if ~is_plottable_method(dataset, mc_methods{m})
+        continue;
+    end
     color_idx = find(strcmp(method_names, mc_methods{m}), 1, 'first');
     if isempty(color_idx)
-        color_idx = m;
+        continue;
     end
     y_mean = max(y_mean_all(m, :), realmin('double'));
     y_stderr = y_stderr_all(m, :);
@@ -150,6 +159,9 @@ theta_true = double(dataset.experiment.theta_true(:));
 param_labels = cellstr_value(dataset.experiment.param_labels);
 method_names = cellstr_value(summary.method_names);
 errors = double(summary.final_param_errors);
+keep_idx = plottable_method_indices(dataset, method_names);
+method_names = method_names(keep_idx);
+errors = errors(keep_idx, :, :);
 n_params = numel(theta_true);
 n_cols = 3;
 n_rows = ceil(n_params / n_cols);
@@ -179,7 +191,24 @@ end
 
 title(tl, sprintf('%s Parametrization: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold');
 end
-ds.results = raw_results(:).';
+
+function fig = plot_montecarlo_final_error_boxplots(dataset)
+summary = dataset.mc_summary;
+method_names = cellstr_value(summary.method_names);
+final_errors = double(summary.final_errors);
+keep_idx = plottable_method_indices(dataset, method_names);
+method_names = method_names(keep_idx);
+final_errors = final_errors(keep_idx, :).';
+
+fig = figure('Name', sprintf('%s Monte Carlo Final Parameter Error', dataset.parametrization), ...
+    'Color', 'w', 'Units', 'centimeters', 'Position', [4 4 18 8]);
+ax = axes(fig);
+boxplot(ax, final_errors, 'Labels', method_names, 'LabelOrientation', 'inline');
+grid(ax, 'on');
+box(ax, 'on');
+ylabel(ax, '$e_\theta$ (\%)');
+title(ax, sprintf('%s Parametrization: Monte Carlo Final Parameter Error', dataset.parametrization), ...
+    'FontWeight', 'bold');
 end
 
 function print_wiener_parameters(datasets)
@@ -259,7 +288,7 @@ function methods = collect_method_names(datasets)
 methods = {};
 for i = 1:numel(datasets)
     for m = 1:numel(datasets(i).results)
-        if is_ok_result(datasets(i).results(m))
+        if is_plotted_result(datasets(i).results(m))
             methods{end + 1} = result_name(datasets(i).results(m)); %#ok<AGROW>
         end
     end
@@ -301,12 +330,15 @@ function plot_metric_axis(ax, dataset, method_names, colors, field_name, x_mode)
 hold(ax, 'on');
 for m = 1:numel(dataset.results)
     result = dataset.results(m);
-    if ~is_ok_result(result)
+    if ~is_plotted_result(result)
         continue;
     end
 
     method = result_name(result);
     color_idx = find(strcmp(method_names, method), 1, 'first');
+    if isempty(color_idx)
+        continue;
+    end
     y = max(result_vector(result, field_name), realmin('double'));
     if strcmp(x_mode, 'time')
         x = result_vector(result, 'cum_time');
@@ -341,11 +373,14 @@ for p = 1:n_params
     hold(ax, 'on');
     for m = 1:numel(dataset.results)
         result = dataset.results(m);
-        if ~is_ok_result(result)
+        if ~is_plotted_result(result)
             continue;
         end
         method = result_name(result);
         color_idx = find(strcmp(method_names, method), 1, 'first');
+        if isempty(color_idx)
+            continue;
+        end
         theta_hist = double(result.theta_hist);
         iter_axis = 0:(size(theta_hist, 2) - 1);
         plot(ax, iter_axis, theta_hist(p, :), 'Color', colors(color_idx, :), ...
@@ -376,6 +411,39 @@ end
 
 function tf = is_ok_result(result)
 tf = strcmpi(strtrim(char_value(result.status)), 'ok');
+end
+
+function tf = is_plotted_result(result)
+tf = is_ok_result(result) && result_cpu_time(result) > 0;
+end
+
+function tf = is_plottable_method(dataset, method_name)
+tf = false;
+for i = 1:numel(dataset.results)
+    if strcmp(result_name(dataset.results(i)), method_name)
+        tf = is_plotted_result(dataset.results(i));
+        return;
+    end
+end
+end
+
+function idx = plottable_method_indices(dataset, method_names)
+keep = false(size(method_names));
+for i = 1:numel(method_names)
+    keep(i) = is_plottable_method(dataset, method_names{i});
+end
+idx = find(keep);
+end
+
+function value = result_cpu_time(result)
+if isfield(result, 'total_time')
+    value = scalar_value(result.total_time);
+elseif isfield(result, 'cum_time') && ~isempty(result.cum_time)
+    cum_time = double(result.cum_time(:));
+    value = cum_time(end);
+else
+    value = 0;
+end
 end
 
 function name = result_name(result)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,8 @@ from common import (
 )
 from methods import method_parameter_update
 from wiener_system import WienerDimensions, generate_example_data, initialize_method_state, simulate_wiener
+
+PYTHON_EXTRA_METHODS = ["WS-GGHAM-2-I", "WS-GGHAM-2-H"]
 
 
 def save_comparison_results(
@@ -291,6 +294,14 @@ def build_dims_and_theta(cfg: dict[str, Any], *, dtype: torch.dtype, device: tor
     return dims, theta_true
 
 
+def select_python_methods(exp_cfg: dict[str, Any]) -> list[str]:
+    selected_methods = list(exp_cfg.get("python_selected_methods", exp_cfg["selected_methods"]))
+    for method_name in PYTHON_EXTRA_METHODS:
+        if method_name not in selected_methods:
+            selected_methods.append(method_name)
+    return selected_methods
+
+
 def pad_vector(values: np.ndarray, length: int) -> np.ndarray:
     values = np.asarray(values, dtype=float).reshape(-1)
     if values.size == 0:
@@ -316,8 +327,11 @@ def run_method_set(
     verbose: bool,
 ) -> list[dict[str, Any]]:
     results = []
+    best_error_so_far = float("inf")
     for method_name in selected_methods:
-        method_cfg = method_configs[make_valid_method_key(method_name)]
+        method_cfg = deepcopy(method_configs[make_valid_method_key(method_name)])
+        if "LGHAM" in method_name.upper() and np.isfinite(best_error_so_far):
+            method_cfg["best_error_so_far"] = best_error_so_far
         if verbose:
             print("\n" + "=" * 72)
             print(f"Running method: {method_name}")
@@ -337,6 +351,10 @@ def run_method_set(
             verbose=verbose,
         )
         results.append(method_result)
+        if "LGHAM" not in method_name.upper() and method_result["status"] == "ok" and method_result["rmse_hist"].size:
+            candidate_error = float(method_result["rmse_hist"][-1] ** 2)
+            if np.isfinite(candidate_error) and candidate_error < best_error_so_far:
+                best_error_so_far = candidate_error
     return results
 
 
@@ -378,7 +396,7 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
 
 
 def main() -> None:
-    experiment_name = "example_CSTR"
+    experiment_name = "example_1"
 
     device = default_device()
     dtype = choose_dtype()
@@ -388,7 +406,7 @@ def main() -> None:
     mode = exp_cfg.get("mode", "EXAMPLE").upper()
     seed = int(exp_cfg.get("seed", 42))
     n_mc = int(exp_cfg.get("N_MC", 1))
-    selected_methods = exp_cfg["selected_methods"]
+    selected_methods = select_python_methods(exp_cfg)
     settings = exp_cfg["settings"]
     lambda_g = int(settings["lambda_g"])
     K_max = int(settings["K_max"])

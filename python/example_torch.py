@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,23 +17,50 @@ from methods import method_parameter_update
 from wiener_system import WienerDimensions, build_state_matrix, generate_example_data, initialize_method_state, parameter_to_loss, simulate_wiener
 
 
+def load_experiment_config(experiment_name: str) -> dict[str, Any]:
+    config_file = PY_ROOT.parent / "configs" / f"{experiment_name}.json"
+    if not config_file.exists():
+        config_file = PY_ROOT.parent / "configs" / f"{experiment_name}.JSON"
+    if not config_file.exists():
+        raise FileNotFoundError(f"Experiment config not found: {config_file}")
+    return load_json_config(config_file)
+
+
+def build_dims_and_theta(cfg: dict[str, Any], *, dtype: torch.dtype, device: torch.device) -> tuple[WienerDimensions, torch.Tensor]:
+    system_cfg = cfg["system"]
+    dims = WienerDimensions(
+        na=int(system_cfg["na"]),
+        nb=int(system_cfg["nb"]),
+        nf=int(system_cfg["nf"]),
+        nd=int(system_cfg.get("nd", 0)),
+    )
+    theta_true = torch.tensor(system_cfg["theta_true"], dtype=dtype, device=device)
+    if theta_true.numel() != dims.n_params:
+        raise ValueError(f"theta_true has {theta_true.numel()} entries, but dims require {dims.n_params}.")
+    return dims, theta_true
+
+
 def main() -> None:
-    set_seed(42)
+    experiment_name = "example_1"
+    default_method_name = "WS_GGHAM_2_dH"
+
     device = default_device()
     dtype = choose_dtype()
+    exp_cfg = load_experiment_config(experiment_name)
+    dims, theta_true = build_dims_and_theta(exp_cfg, dtype=dtype, device=device)
 
-    dims = WienerDimensions(na=2, nb=2, nf=2, nd=1)
-    theta_true = torch.tensor([-0.31, -0.27, 0.23, 0.98, 0.32, -0.40], dtype=dtype, device=device)
-
-    lambda_g = 1000*2
-    burn_in = 100
-    sigma_nu = 0.10   # Noise power essentially determines the step size scale needed for the d parameter. More noise -> lower step size.
-    K_max = 240*1
-    conv_threshold = 1e-8
-    method_name = "WS-GNI"
-    config_file = PY_ROOT / "optim_configs.json"
+    seed = int(exp_cfg.get("seed", 42))
+    settings = exp_cfg["settings"]
+    lambda_g = int(settings["lambda_g"])
+    burn_in = int(settings["burn_in"])
+    sigma_nu = float(settings["sigma_nu"])
+    K_max = int(settings["K_max"])
+    conv_threshold = float(settings["conv_threshold"])
+    method_name = exp_cfg.get("python_example_method", exp_cfg.get("example_method", default_method_name))
+    config_file = PY_ROOT / exp_cfg.get("python_optim_config", "optim_configs.json")
 
     # Generate measured data from the true system
+    set_seed(seed)
     data = generate_example_data(dims, theta_true, lambda_g, burn_in, sigma_nu, device=device, dtype=dtype)
     r, nu, c = data["r"], data["nu"], data["c"]
 
@@ -138,7 +166,7 @@ def main() -> None:
     ax3.set_ylabel("Error")
     ax3.grid(True)
     ax3.legend(loc="best")
-    fig.suptitle(f"{method_name}: Wiener System with AR Noise - Example 1 (PyTorch)", fontsize=13, fontweight="bold")
+    fig.suptitle(f"{method_name}: {experiment_name} (PyTorch)", fontsize=13, fontweight="bold")
     fig.tight_layout()
 
     fig2, axes = plt.subplots(int(np.ceil(dims.n_params / 3)), 3, figsize=(9, 5.5))
@@ -154,7 +182,7 @@ def main() -> None:
         axes[i].legend(["Estimate", "True"], loc="best")
     for i in range(dims.n_params, len(axes)):
         axes[i].axis("off")
-    fig2.suptitle(f"Parameter Convergence Trajectories - {method_name} (PyTorch)", fontsize=12, fontweight="bold")
+    fig2.suptitle(f"Parameter Convergence Trajectories - {method_name} / {experiment_name} (PyTorch)", fontsize=12, fontweight="bold")
     fig2.tight_layout()
     plt.show()
 
