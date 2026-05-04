@@ -2,7 +2,7 @@
   "methods": {
     "WS_GGI": {
       "step_size": 0.03,
-      "d_step_multiplier": 50.0,
+      "d_step_multiplier": 100.0,
       "initialization": {
         "mode": "physical",
         "linear_init_a": [0.0, 0.0],
@@ -24,7 +24,7 @@
     },
     "WS_GNI": {
       "eta": 1.0,
-      "d_step_multiplier": 20.0,
+      "d_step_multiplier": 100.0,
       "hessian_regularization": 10.0,
       "derivative_order": 2,
       "initialization": {
@@ -39,37 +39,37 @@
     "WS_GGHAM_1_dH": {
       "eta": 1.0,
       "hessian_regularization": 10.0,
-      "d_step_multiplier": 10.0,
+      "d_step_multiplier": 100.0,
       "derivative_order": 2,
       "notes": "First-order gradient-root GHAM update using autodiff gradient and diagonal Hessian approximation from params_to_loss. Tuned on lambda_g=2000, sigma_nu=0.1."
     },
     "WS_GGHAM_2_I": {
       "eta": 0.02,
-      "d_step_multiplier": 10.0,
+      "d_step_multiplier": 100.0,
       "derivative_order": 2,
       "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with identity linear operator."
     },
     "WS_GGHAM_2_dH": {
       "eta": 0.5,
       "hessian_regularization": 5.0,
-      "d_step_multiplier": 10.0,
+      "d_step_multiplier": 100.0,
       "derivative_order": 2,
       "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with diagonal-Hessian linear operator."
     },
     "WS_GGHAM_2_H": {
       "eta": 1.2,
       "hessian_regularization": 10.0,
-      "d_step_multiplier": 10.0,
+      "d_step_multiplier": 100.0,
       "derivative_order": 2,
       "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with Hessian linear operator."
     },
     "WS_LGHAM_1_TIK": {
       "eps_0": "automatic",
-      "eta": 0.6,
+      "eta": 1.0,
       "inverse_solver": "tikhonov",
       "tikhonov_lambda": 0.01,
       "order": 1,
-      "d_step_multiplier": 10.0,
+      "d_step_multiplier": 100.0,
       "derivative_order": 1,
       "notes": "Placeholder for loss-root GHAM update. Derivatives are available for custom manual rules."
     },
@@ -79,7 +79,7 @@
       "inverse_solver": "tikhonov",
       "tikhonov_lambda": 0.01,
       "order": 3,
-      "d_step_multiplier": 10.0,
+      "d_step_multiplier": 100.0,
       "derivative_order": 3,
       "notes": "Placeholder for higher-order loss-root GHAM update. Derivatives are available for custom manual rules."
     }

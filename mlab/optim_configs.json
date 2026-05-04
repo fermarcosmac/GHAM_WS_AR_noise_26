@@ -65,17 +65,17 @@
       },
       "WS_LGHAM_1_TIK": {
           "eps_0": "automatic",
-          "eta": 0.5e-1,
+          "eta": 2e-1,
           "inverse_solver": "tikhonov",
-          "tikhonov_lambda": 1e2,
+          "tikhonov_lambda": 1e1,
           "order": 1,
           "notes": "Loss-root GHAM update using first-order correction term."
       },
     "WS_LGHAM_3_TIK": {
       "eps_0": "automatic",
-      "eta": 0.5e-1,
+      "eta": 2e-1,
       "inverse_solver": "tikhonov",
-      "tikhonov_lambda": 1e2,
+      "tikhonov_lambda": 1e1,
       "order": 3,
       "notes": "Loss-root GHAM update using correction terms up to third order."
     }
