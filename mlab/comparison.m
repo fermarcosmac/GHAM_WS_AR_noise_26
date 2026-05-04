@@ -6,104 +6,66 @@
 % experiment loop.
 
 clear; clc; close all;
-rng(42);
 script_dir = fileparts(mfilename('fullpath'));
 
 %% 0. Experiment configuration
-config_file = fullfile(script_dir, 'optim_configs.json');
-make_local_plots = true;
-results_file = fullfile(script_dir, '..', 'results', 'comparison_pl.mat');
-
-% List the methods to compare here. Unknown methods or placeholder methods
-% are reported and skipped gracefully.
-selected_methods = { ...
-    'RGLS', ...
-    'WS-GNI', ...
-    'WS-GGI', ...
-    'WS-GGHAM-1-dH', ...
-    'WS-GGHAM-2-dH', ...
-    'WS-LGHAM-1-TIK', ...
-    'WS-LGHAM-3-TIK', ...
-    %'WS-GGHAM-2-I', ...
-};
+experiment_name = 'example_CSTR';
+repo_root = fullfile(script_dir, '..');
+experiment_cfg = load_experiment_config(repo_root, experiment_name);
+mode = upper(char(get_optional_field(experiment_cfg, 'mode', 'EXAMPLE')));
+seed = get_optional_field(experiment_cfg, 'seed', 42);
+N_MC = get_optional_field(experiment_cfg, 'N_MC', 1);
+config_file = fullfile(script_dir, get_optional_field(experiment_cfg, 'matlab_optim_config', 'optim_configs.json'));
+make_local_plots = get_optional_field(experiment_cfg, 'make_local_plots', strcmp(mode, 'EXAMPLE'));
+results_dir = fullfile(repo_root, 'results', experiment_name);
+results_file = fullfile(results_dir, sprintf('comparison_pl_%s.mat', lower(mode)));
+selected_methods = cellstr_value(experiment_cfg.selected_methods);
 
 %% 1. True system parameters
-na = 2;
-nb = 2;
-nf = 2;
-nd = 1;
+system_cfg = experiment_cfg.system;
+na = system_cfg.na;
+nb = system_cfg.nb;
+nf = system_cfg.nf;
+nd = get_optional_field(system_cfg, 'nd', 0);
 n = na + nb + (nf - 1) + nd;
-
-a_true = [-0.31; -0.27];
-b_true = [0.23; 0.98];
-f_true = 0.32;
-d_true = -0.40;
-
-%na = 10;
-%nb = 10;
-%nf = 2;
-%n = na + nb + (nf - 1) + nd;
-%a_true = -1e-1*rand(na,1);
-%b_true = 1e-1*rand(nb,1);
-%f_true = randn(nf - 1, 1);
-
-theta_true = [a_true; b_true; f_true; d_true];
+theta_true = system_cfg.theta_true(:);
+assert(numel(theta_true) == n, 'theta_true has %d entries, but dimensions require %d.', numel(theta_true), n);
 param_names = build_param_names(na, nb, nf, nd);
 param_labels = build_plot_labels(na, nb, nf, nd);
 
 %% 2. Shared experiment settings
-lambda_g = 1000*2;                % more data, better results (less bias)
-K_max = 240;
-conv_threshold = 1e-8;
-sigma_nu = 0.10;                    % noise power changes the bias in parameter estimates
-burn_in = 100;
-enforce_fixed_iterations = true;    % For comparison purposes
+settings = experiment_cfg.settings;
+lambda_g = settings.lambda_g;
+K_max = settings.K_max;
+conv_threshold = settings.conv_threshold;
+sigma_nu = settings.sigma_nu;
+burn_in = settings.burn_in;
+enforce_fixed_iterations = get_optional_field(settings, 'enforce_fixed_iterations', strcmp(mode, 'MONTECARLO'));
 
 %% 3. Generate input / noise / true output
-N_total = lambda_g + burn_in;
-r_full = randn(N_total, 1);
-nu_full = sigma_nu * randn(N_total, 1);
-
-poly_coeffs_true = [flipud(f_true(:)); 1; 0];
-
-den_lin_true = [1; a_true(:)];
-num_lin_true = [0; b_true(:)];
-alpha_full = filter(num_lin_true.', den_lin_true.', r_full);
-
-den_ar_true = [1; d_true(:)];
-e_full = filter(1, den_ar_true.', nu_full);
-
-beta_full = polyval(poly_coeffs_true.', alpha_full);
-c_full = beta_full + e_full;
-
-keep_idx = (burn_in + 1):(burn_in + lambda_g);
-r = r_full(keep_idx);
-nu = nu_full(keep_idx);
-c = c_full(keep_idx);
+rng(seed);
+[r, nu, c] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
 
 %% 4. Load optimization configs
 method_configs = load_method_configs(config_file);
 
 %% 5. Run selected methods
-results = [];
-best_error_so_far = Inf;
-for m = 1:numel(selected_methods)
-    method_name = selected_methods{m};
-    method_cfg = get_method_config(method_configs, method_name);
-    fprintf('\n%s\n', repmat('=', 1, 72));
-    fprintf('Running method: %s\n', method_name);
-    fprintf('%s\n', repmat('=', 1, 72));
+results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, ...
+    na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, true);
 
-    method_result = run_identification_method( ...
-        method_name, method_cfg, r, nu, c, theta_true, ...
-        na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far);
-
-    best_error_so_far = method_result.best_error_so_far;
-    if isempty(results)
-        results = method_result;
-    else
-        results(end + 1) = method_result;
+mc_summary = [];
+if strcmp(mode, 'MONTECARLO')
+    mc_runs = cell(N_MC, 1);
+    mc_runs{1} = results;
+    for mc = 2:N_MC
+        run_seed = seed + mc - 1;
+        fprintf('\nMonte Carlo run %d/%d (seed %d)\n', mc, N_MC, run_seed);
+        rng(run_seed);
+        [r_mc, nu_mc, c_mc] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
+        mc_runs{mc} = run_method_set(selected_methods, method_configs, r_mc, nu_mc, c_mc, theta_true, ...
+            na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, false);
     end
+    mc_summary = summarize_montecarlo(mc_runs, selected_methods, theta_true, K_max);
 end
 
 %% 6. Summary table
@@ -126,7 +88,8 @@ end
 %% 7. Plots
 save_comparison_results(results_file, results, selected_methods, ...
     na, nb, nf, nd, theta_true, param_names, param_labels, ...
-    lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations);
+    lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, ...
+    experiment_name, mode, seed, N_MC, struct('r', r, 'nu', nu, 'c', c), mc_summary);
 
 if make_local_plots
     plot_method_metrics(results);
@@ -138,7 +101,126 @@ end
 
 
 %% Local functions
-function result = run_identification_method(method_name, method_cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far)
+function results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, verbose)
+results = [];
+best_error_so_far = Inf;
+for m = 1:numel(selected_methods)
+    method_name = selected_methods{m};
+    method_cfg = get_method_config(method_configs, method_name);
+    if verbose
+        fprintf('\n%s\n', repmat('=', 1, 72));
+        fprintf('Running method: %s\n', method_name);
+        fprintf('%s\n', repmat('=', 1, 72));
+    end
+
+    method_result = run_identification_method( ...
+        method_name, method_cfg, r, nu, c, theta_true, ...
+        na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose);
+
+    best_error_so_far = method_result.best_error_so_far;
+    if isempty(results)
+        results = method_result;
+    else
+        results(end + 1) = method_result;
+    end
+end
+end
+
+function [r, nu, c] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu)
+N_total = lambda_g + burn_in;
+r_full = randn(N_total, 1);
+nu_full = sigma_nu * randn(N_total, 1);
+c_full = simulate_wiener(r_full, nu_full, theta_true, na, nb, nf, nd, N_total);
+keep_idx = (burn_in + 1):(burn_in + lambda_g);
+r = r_full(keep_idx);
+nu = nu_full(keep_idx);
+c = c_full(keep_idx);
+end
+
+function summary = summarize_montecarlo(mc_runs, selected_methods, theta_true, K_max)
+N_MC = numel(mc_runs);
+n_methods = numel(selected_methods);
+n_params = numel(theta_true);
+param_err_runs = NaN(n_methods, N_MC, K_max);
+rmse_runs = NaN(n_methods, N_MC, K_max);
+final_param_errors = NaN(n_methods, N_MC, n_params);
+final_param_estimates = NaN(n_methods, N_MC, n_params);
+final_errors = NaN(n_methods, N_MC);
+
+for mc = 1:N_MC
+    run_results = mc_runs{mc};
+    for m = 1:n_methods
+        idx = find(strcmp({run_results.name}, selected_methods{m}), 1);
+        if isempty(idx)
+            continue;
+        end
+        result = run_results(idx);
+        param_err_runs(m, mc, :) = pad_curve(result.param_err, K_max);
+        rmse_runs(m, mc, :) = pad_curve(result.RMSE_hist, K_max);
+        final_errors(m, mc) = result.final_err;
+        if ~isempty(result.theta_hat)
+            theta_hat = result.theta_hat(:);
+            final_param_estimates(m, mc, :) = theta_hat;
+            final_param_errors(m, mc, :) = theta_hat - theta_true(:);
+        end
+    end
+end
+
+summary = struct( ...
+    'method_names', {selected_methods}, ...
+    'param_err_runs', param_err_runs, ...
+    'param_err_mean', squeeze(mean(param_err_runs, 2, 'omitnan')), ...
+    'param_err_stderr', squeeze(std(param_err_runs, 0, 2, 'omitnan')) ./ sqrt(max(N_MC, 1)), ...
+    'rmse_runs', rmse_runs, ...
+    'rmse_mean', squeeze(mean(rmse_runs, 2, 'omitnan')), ...
+    'rmse_stderr', squeeze(std(rmse_runs, 0, 2, 'omitnan')) ./ sqrt(max(N_MC, 1)), ...
+    'final_param_errors', final_param_errors, ...
+    'final_param_estimates', final_param_estimates, ...
+    'final_errors', final_errors);
+end
+
+function y = pad_curve(x, target_len)
+x = x(:);
+if isempty(x)
+    y = NaN(target_len, 1);
+elseif numel(x) >= target_len
+    y = x(1:target_len);
+else
+    y = [x; repmat(x(end), target_len - numel(x), 1)];
+end
+end
+
+function cfg = load_experiment_config(repo_root, experiment_name)
+config_file = fullfile(repo_root, 'configs', [experiment_name, '.json']);
+if exist(config_file, 'file') ~= 2
+    config_file = fullfile(repo_root, 'configs', [experiment_name, '.JSON']);
+end
+assert(exist(config_file, 'file') == 2, 'Could not find experiment config file for experiment "%s".', experiment_name);
+cfg = jsondecode(fileread(config_file));
+end
+
+function value = get_optional_field(s, name, default_value)
+if isfield(s, name)
+    value = s.(name);
+else
+    value = default_value;
+end
+end
+
+function cells = cellstr_value(value)
+if iscell(value)
+    cells = cellfun(@char, value, 'UniformOutput', false);
+elseif isstring(value)
+    cells = cellstr(value);
+elseif ischar(value)
+    cells = cellstr(value);
+else
+    cells = cellstr(string(value));
+end
+cells = cells(:).';
+end
+
+function result = run_identification_method(method_name, method_cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose)
 n = na + nb + (nf - 1) + nd;
 
 init_state = initialize_method_state(method_cfg, r, c, na, nb, lambda_g, n);
@@ -226,18 +308,24 @@ for k = 2:K_max
 
     iter_num = k - 1;
     if ismember(iter_num, [5 10 15 30 50 70 100 240]) || iter_num == (K_max - 1)
-        fprintf('%-6d  ', iter_num);
-        fprintf('%-10.5f  ', theta_hat);
-        fprintf('%-10.5f  %-10.5f\n', param_err(k), cum_time(k));
+        if verbose
+            fprintf('%-6d  ', iter_num);
+            fprintf('%-10.5f  ', theta_hat);
+            fprintf('%-10.5f  %-10.5f\n', param_err(k), cum_time(k));
+        end
     end
 
     if rel_change(k) < conv_threshold
         if enforce_fixed_iterations
             has_converged = true;
-            fprintf('*** %s converged at iteration %d (holding parameters for remaining iterations) ***\n', method_name, iter_num);
+            if verbose
+                fprintf('*** %s converged at iteration %d (holding parameters for remaining iterations) ***\n', method_name, iter_num);
+            end
         else
             iter_count = k;
-            fprintf('*** %s converged at iteration %d ***\n', method_name, iter_num);
+            if verbose
+                fprintf('*** %s converged at iteration %d ***\n', method_name, iter_num);
+            end
             break;
         end
     end
@@ -245,7 +333,7 @@ end
 
 % Final error
 final_error = 0.5*sum((c-Phi_hat*theta_hat).^2);
-if (final_error < best_error_so_far) && ~contains('LGHAM',method_name)
+if (final_error < best_error_so_far) && ~contains(method_name, 'LGHAM')
     best_error_so_far = final_error;
 end
 
@@ -270,7 +358,7 @@ else
     theta_hat = [];
 end
 
-if ~isempty(status_msg)
+if ~isempty(status_msg) && verbose
     fprintf('  %s\n', status_msg);
 end
 
@@ -783,7 +871,7 @@ labels = [arrayfun(@(i) sprintf('a_%d', i), 1:na, 'UniformOutput', false), ...
           arrayfun(@(i) sprintf('d_%d', i), 1:nd, 'UniformOutput', false)];
 end
 
-function save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations)
+function save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, experiment_name, mode, seed, N_MC, example_data, mc_summary)
 out_dir = fileparts(output_file);
 if ~exist(out_dir, 'dir')
     mkdir(out_dir);
@@ -792,7 +880,10 @@ end
 parametrization = 'PL';
 generated_at = char(datetime('now', 'Format', 'yyyy-MM-dd''T''HH:mm:ss'));
 experiment = struct( ...
-    'seed', 42, ...
+    'name', experiment_name, ...
+    'mode', mode, ...
+    'seed', seed, ...
+    'N_MC', N_MC, ...
     'lambda_g', lambda_g, ...
     'K_max', K_max, ...
     'conv_threshold', conv_threshold, ...
@@ -841,7 +932,7 @@ else
     end
 end
 
-save(output_file, 'parametrization', 'generated_at', 'experiment', 'results', '-v7');
+save(output_file, 'parametrization', 'generated_at', 'experiment', 'results', 'example_data', 'mc_summary', '-v7');
 fprintf('\nSaved PL results to: %s\n', output_file);
 end
 

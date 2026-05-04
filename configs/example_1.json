@@ -1,0 +1,32 @@
+{
+  "mode": "EXAMPLE",
+  "seed": 42,
+  "N_MC": 30,
+  "make_local_plots": true,
+  "python_optim_config": "optim_configs.json",
+  "matlab_optim_config": "optim_configs.json",
+  "selected_methods": [
+    "RGLS",
+    "WS-GNI",
+    "WS-GGI",
+    "WS-GGHAM-1-dH",
+    "WS-GGHAM-2-dH",
+    "WS-LGHAM-1-TIK",
+    "WS-LGHAM-3-TIK"
+  ],
+  "system": {
+    "na": 2,
+    "nb": 2,
+    "nf": 2,
+    "nd": 1,
+    "theta_true": [-0.31, -0.27, 0.23, 0.98, 0.32, -0.40]
+  },
+  "settings": {
+    "lambda_g": 2000,
+    "K_max": 240,
+    "conv_threshold": 1e-8,
+    "sigma_nu": 0.10,
+    "burn_in": 100,
+    "enforce_fixed_iterations": true
+  }
+}

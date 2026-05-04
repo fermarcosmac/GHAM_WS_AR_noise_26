@@ -8,9 +8,11 @@ clear; clc; close all;
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
+experiment_name = 'example_CSTR';
+mode = 'EXAMPLE';  % EXAMPLE or MONTECARLO
 data_files = { ...
-    fullfile(repo_root, 'results', 'comparison_fsm.mat'), ...
-    fullfile(repo_root, 'results', 'comparison_pl.mat') ...
+    fullfile(repo_root, 'results', experiment_name, sprintf('comparison_fsm_%s.mat', lower(mode))), ...
+    fullfile(repo_root, 'results', experiment_name, sprintf('comparison_pl_%s.mat', lower(mode))) ...
 };
 export_figures = true;
 fig_dir = fullfile(repo_root, 'figs');
@@ -58,6 +60,16 @@ for i = 1:numel(datasets)
     fig_params = plot_parameter_trajectories_saved(datasets(i), method_names, colors);
     filename = sprintf('parameter_trajectories_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
     export_if_requested(fig_params, fig_dir, filename, export_figures);
+
+    if isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
+        fig_mc = plot_montecarlo_summary(datasets(i), method_names, colors);
+        mc_filename = sprintf('montecarlo_summary_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+        export_if_requested(fig_mc, fig_dir, mc_filename, export_figures);
+
+        fig_box = plot_montecarlo_boxplots(datasets(i));
+        box_filename = sprintf('montecarlo_parameter_boxplots_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+        export_if_requested(fig_box, fig_dir, box_filename, export_figures);
+    end
 end
 
 fprintf('\nDone. MATLAB figures rendered from saved comparison data.\n');
@@ -69,10 +81,103 @@ ds.file = file_name;
 ds.parametrization = char_value(loaded.parametrization);
 ds.generated_at = char_value(loaded.generated_at);
 ds.experiment = loaded.experiment;
+if isfield(loaded, 'mc_summary')
+    ds.mc_summary = loaded.mc_summary;
+else
+    ds.mc_summary = [];
+end
 
 raw_results = loaded.results;
 if iscell(raw_results)
     raw_results = [raw_results{:}];
+end
+
+function fig = plot_montecarlo_summary(dataset, method_names, colors)
+summary = dataset.mc_summary;
+parametrization = dataset.parametrization;
+fig = figure('Name', sprintf('%s Monte Carlo Summary', parametrization), ...
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 18 8]);
+tl = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+ax1 = nexttile(tl);
+plot_mc_axis(ax1, summary, method_names, colors, 'param_err_mean', 'param_err_stderr');
+set(ax1, 'YScale', 'log');
+title(ax1, sprintf('Mean parameter error (%s)', parametrization));
+ylabel(ax1, '$e_\theta$ (\%)');
+
+ax2 = nexttile(tl);
+plot_mc_axis(ax2, summary, method_names, colors, 'rmse_mean', 'rmse_stderr');
+set(ax2, 'YScale', 'log');
+title(ax2, sprintf('Mean RMSE (%s)', parametrization));
+ylabel(ax2, 'RMSE');
+
+legend(ax1, 'Location', 'best', 'FontSize', 8);
+title(tl, sprintf('%s Monte Carlo Curves', parametrization), 'FontWeight', 'bold');
+end
+
+function plot_mc_axis(ax, summary, method_names, colors, mean_field, stderr_field)
+hold(ax, 'on');
+mc_methods = cellstr_value(summary.method_names);
+y_mean_all = double(summary.(mean_field));
+y_stderr_all = double(summary.(stderr_field));
+if size(y_mean_all, 1) ~= numel(mc_methods)
+    y_mean_all = y_mean_all.';
+    y_stderr_all = y_stderr_all.';
+end
+
+for m = 1:numel(mc_methods)
+    color_idx = find(strcmp(method_names, mc_methods{m}), 1, 'first');
+    if isempty(color_idx)
+        color_idx = m;
+    end
+    y_mean = max(y_mean_all(m, :), realmin('double'));
+    y_stderr = y_stderr_all(m, :);
+    x = 0:(numel(y_mean) - 1);
+    lo = max(y_mean - y_stderr, realmin('double'));
+    hi = y_mean + y_stderr;
+    fill(ax, [x fliplr(x)], [lo fliplr(hi)], colors(color_idx, :), ...
+        'FaceAlpha', 0.14, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    plot(ax, x, y_mean, 'Color', colors(color_idx, :), 'DisplayName', latex_label(mc_methods{m}));
+end
+grid(ax, 'on');
+box(ax, 'on');
+xlabel(ax, 'Iteration');
+end
+
+function fig = plot_montecarlo_boxplots(dataset)
+summary = dataset.mc_summary;
+theta_true = double(dataset.experiment.theta_true(:));
+param_labels = cellstr_value(dataset.experiment.param_labels);
+method_names = cellstr_value(summary.method_names);
+errors = double(summary.final_param_errors);
+n_params = numel(theta_true);
+n_cols = 3;
+n_rows = ceil(n_params / n_cols);
+
+fig = figure('Name', sprintf('%s Monte Carlo Parameter Errors', dataset.parametrization), ...
+    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 18 5.2 * n_rows]);
+tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+for p = 1:n_params
+    ax = nexttile(tl);
+    values = squeeze(errors(:, :, p)).';
+    boxplot(ax, values, 'Labels', method_names, 'LabelOrientation', 'inline');
+    yline(ax, 0, 'k--', 'LineWidth', 1.0);
+    grid(ax, 'on');
+    box(ax, 'on');
+    ylabel(ax, '$\hat{\theta}-\theta^\star$');
+    if p <= numel(param_labels)
+        title(ax, sprintf('$%s$ final error', param_labels{p}));
+    else
+        title(ax, sprintf('$\\theta_%d$ final error', p));
+    end
+end
+
+for p = (n_params + 1):(n_rows * n_cols)
+    axis(nexttile(tl), 'off');
+end
+
+title(tl, sprintf('%s Parametrization: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold');
 end
 ds.results = raw_results(:).';
 end

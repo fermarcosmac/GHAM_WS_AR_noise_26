@@ -67,7 +67,7 @@
           "eps_0": "automatic",
           "eta": 2e-1,
           "inverse_solver": "tikhonov",
-          "tikhonov_lambda": 1e1,
+          "tikhonov_lambda": 1e-1,
           "order": 1,
           "notes": "Loss-root GHAM update using first-order correction term."
       },
@@ -75,7 +75,7 @@
       "eps_0": "automatic",
       "eta": 2e-1,
       "inverse_solver": "tikhonov",
-      "tikhonov_lambda": 1e1,
+      "tikhonov_lambda": 1e-1,
       "order": 3,
       "notes": "Loss-root GHAM update using correction terms up to third order."
     }
