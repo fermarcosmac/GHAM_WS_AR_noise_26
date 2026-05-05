@@ -9,7 +9,7 @@ clear; clc; close all;
 script_dir = fileparts(mfilename('fullpath'));
 
 %% 0. Experiment configuration
-experiment_name = 'example_1';
+experiment_name = 'example_CSTR';
 repo_root = fullfile(script_dir, '..');
 experiment_cfg = load_experiment_config(repo_root, experiment_name);
 mode = upper(char(get_optional_field(experiment_cfg, 'mode', 'EXAMPLE')));
@@ -106,16 +106,24 @@ results = [];
 best_error_so_far = Inf;
 for m = 1:numel(selected_methods)
     method_name = selected_methods{m};
-    method_cfg = get_method_config(method_configs, method_name);
     if verbose
         fprintf('\n%s\n', repmat('=', 1, 72));
         fprintf('Running method: %s\n', method_name);
         fprintf('%s\n', repmat('=', 1, 72));
     end
 
-    method_result = run_identification_method( ...
-        method_name, method_cfg, r, nu, c, theta_true, ...
-        na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose);
+    if ~has_method_config(method_configs, method_name)
+        status_msg = sprintf('No PL optimizer config entry found for method "%s". Skipping.', method_name);
+        if verbose
+            fprintf('  %s\n', status_msg);
+        end
+        method_result = make_skipped_result(method_name, status_msg, n_params_from_dims(na, nb, nf, nd), best_error_so_far);
+    else
+        method_cfg = get_method_config(method_configs, method_name);
+        method_result = run_identification_method( ...
+            method_name, method_cfg, r, nu, c, theta_true, ...
+            na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose);
+    end
 
     best_error_so_far = method_result.best_error_so_far;
     if isempty(results)
@@ -124,6 +132,28 @@ for m = 1:numel(selected_methods)
         results(end + 1) = method_result;
     end
 end
+end
+
+function n = n_params_from_dims(na, nb, nf, nd)
+n = na + nb + (nf - 1) + nd;
+end
+
+function result = make_skipped_result(method_name, status_msg, n, best_error_so_far)
+result = struct( ...
+    'name', method_name, ...
+    'status', 'skipped', ...
+    'status_msg', status_msg, ...
+    'theta_hat', [], ...
+    'theta_hist', zeros(n, 0), ...
+    'param_err', zeros(0, 1), ...
+    'rel_change', zeros(0, 1), ...
+    'RMSE_hist', zeros(0, 1), ...
+    'iter_time', zeros(0, 1), ...
+    'cum_time', zeros(0, 1), ...
+    'final_err', NaN, ...
+    'total_time', 0, ...
+    'iterations', 0, ...
+    'best_error_so_far', best_error_so_far);
 end
 
 function [r, nu, c] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu)
@@ -848,6 +878,11 @@ function method_cfg = get_method_config(configs, method_name)
 field_name = matlab.lang.makeValidName(method_name);
 assert(isfield(configs, field_name), 'No config entry found for method "%s".', method_name);
 method_cfg = configs.(field_name);
+end
+
+function tf = has_method_config(configs, method_name)
+field_name = matlab.lang.makeValidName(method_name);
+tf = isfield(configs, field_name);
 end
 
 function assert_config_fields(cfg, required_fields, method_name)

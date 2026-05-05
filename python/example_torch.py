@@ -42,7 +42,7 @@ def build_dims_and_theta(cfg: dict[str, Any], *, dtype: torch.dtype, device: tor
 
 def main() -> None:
     experiment_name = "example_1"
-    default_method_name = "WS_GGHAM_2_dH"
+    default_method_name = "WS-GGI"
 
     device = default_device()
     dtype = choose_dtype()

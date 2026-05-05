@@ -50,28 +50,32 @@ validate_common_wiener_system(datasets);
 print_result_tables(datasets);
 
 method_names = collect_method_names(datasets);
-colors = lines(max(numel(method_names), 1));
+colors = build_distinct_colors(max(numel(method_names), 1));
+experiment_tag = lower(sanitize_filename(experiment_name));
+mode_tag = lower(sanitize_filename(mode));
 
 for i = 1:numel(datasets)
+    parametrization_tag = lower(sanitize_filename(datasets(i).parametrization));
+
     fig_metrics = plot_metric_summary(datasets(i), method_names, colors);
-    metrics_filename = sprintf('comparison_metrics_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+    metrics_filename = sprintf('comparison_metrics_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
     export_if_requested(fig_metrics, fig_dir, metrics_filename, export_figures);
 
     fig_params = plot_parameter_trajectories_saved(datasets(i), method_names, colors);
-    filename = sprintf('parameter_trajectories_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+    filename = sprintf('parameter_trajectories_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
     export_if_requested(fig_params, fig_dir, filename, export_figures);
 
     if isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
         fig_mc = plot_montecarlo_summary(datasets(i), method_names, colors);
-        mc_filename = sprintf('montecarlo_summary_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+        mc_filename = sprintf('montecarlo_summary_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
         export_if_requested(fig_mc, fig_dir, mc_filename, export_figures);
 
         fig_box = plot_montecarlo_boxplots(datasets(i));
-        box_filename = sprintf('montecarlo_parameter_boxplots_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+        box_filename = sprintf('montecarlo_parameter_boxplots_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
         export_if_requested(fig_box, fig_dir, box_filename, export_figures);
 
         fig_err_box = plot_montecarlo_final_error_boxplots(datasets(i));
-        err_box_filename = sprintf('montecarlo_final_error_boxplots_%s.pdf', lower(sanitize_filename(datasets(i).parametrization)));
+        err_box_filename = sprintf('montecarlo_final_error_boxplots_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
         export_if_requested(fig_err_box, fig_dir, err_box_filename, export_figures);
     end
 end
@@ -101,23 +105,22 @@ end
 function fig = plot_montecarlo_summary(dataset, method_names, colors)
 parametrization = dataset.parametrization;
 fig = figure('Name', sprintf('%s Monte Carlo Summary', parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 18 8]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 22 9.5]);
 tl = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax1 = nexttile(tl);
 plot_mc_axis(ax1, dataset, method_names, colors, 'param_err_mean', 'param_err_stderr');
 set(ax1, 'YScale', 'log');
-title(ax1, sprintf('Mean parameter error (%s)', parametrization));
+title(ax1, 'Mean parameter error');
 ylabel(ax1, '$e_\theta$ (\%)');
 
 ax2 = nexttile(tl);
 plot_mc_axis(ax2, dataset, method_names, colors, 'rmse_mean', 'rmse_stderr');
 set(ax2, 'YScale', 'log');
-title(ax2, sprintf('Mean RMSE (%s)', parametrization));
+title(ax2, 'Mean output RMSE');
 ylabel(ax2, 'RMSE');
 
-legend(ax1, 'Location', 'best', 'FontSize', 8);
-title(tl, sprintf('%s Monte Carlo Curves', parametrization), 'FontWeight', 'bold');
+legend(ax2, 'Location', 'best', 'FontSize', 8);
 end
 
 function plot_mc_axis(ax, dataset, method_names, colors, mean_field, stderr_field)
@@ -146,7 +149,8 @@ for m = 1:numel(mc_methods)
     hi = y_mean + y_stderr;
     fill(ax, [x fliplr(x)], [lo fliplr(hi)], colors(color_idx, :), ...
         'FaceAlpha', 0.14, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    plot(ax, x, y_mean, 'Color', colors(color_idx, :), 'DisplayName', latex_label(mc_methods{m}));
+    plot(ax, x, y_mean, 'Color', colors(color_idx, :), ...
+        'DisplayName', latex_label(display_method_label(mc_methods{m}, dataset.parametrization)));
 end
 grid(ax, 'on');
 box(ax, 'on');
@@ -161,19 +165,20 @@ method_names = cellstr_value(summary.method_names);
 errors = double(summary.final_param_errors);
 keep_idx = plottable_method_indices(dataset, method_names);
 method_names = method_names(keep_idx);
+method_labels = display_method_labels(method_names, dataset.parametrization);
 errors = errors(keep_idx, :, :);
 n_params = numel(theta_true);
 n_cols = 3;
 n_rows = ceil(n_params / n_cols);
 
 fig = figure('Name', sprintf('%s Monte Carlo Parameter Errors', dataset.parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 18 5.2 * n_rows]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 22 6.4 * n_rows]);
 tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 for p = 1:n_params
     ax = nexttile(tl);
     values = squeeze(errors(:, :, p)).';
-    boxplot(ax, values, 'Labels', method_names, 'LabelOrientation', 'inline');
+    boxplot(ax, values, 'Labels', method_labels, 'LabelOrientation', 'inline');
     yline(ax, 0, 'k--', 'LineWidth', 1.0);
     grid(ax, 'on');
     box(ax, 'on');
@@ -183,13 +188,14 @@ for p = 1:n_params
     else
         title(ax, sprintf('$\\theta_%d$ final error', p));
     end
+    ylim(ax, robust_axis_limits(values(:), 0));
 end
 
 for p = (n_params + 1):(n_rows * n_cols)
     axis(nexttile(tl), 'off');
 end
 
-title(tl, sprintf('%s Parametrization: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold');
+title(tl, sprintf('%s Parametrization: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold', 'FontSize', 11);
 end
 
 function fig = plot_montecarlo_final_error_boxplots(dataset)
@@ -198,12 +204,13 @@ method_names = cellstr_value(summary.method_names);
 final_errors = double(summary.final_errors);
 keep_idx = plottable_method_indices(dataset, method_names);
 method_names = method_names(keep_idx);
+method_labels = display_method_labels(method_names, dataset.parametrization);
 final_errors = final_errors(keep_idx, :).';
 
 fig = figure('Name', sprintf('%s Monte Carlo Final Parameter Error', dataset.parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [4 4 18 8]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [4 4 22 9]);
 ax = axes(fig);
-boxplot(ax, final_errors, 'Labels', method_names, 'LabelOrientation', 'inline');
+boxplot(ax, final_errors, 'Labels', method_labels, 'LabelOrientation', 'inline');
 grid(ax, 'on');
 box(ax, 'on');
 ylabel(ax, '$e_\theta$ (\%)');
@@ -239,12 +246,12 @@ end
 
 function print_result_tables(datasets)
 for i = 1:numel(datasets)
-    fprintf('\n%s\n', repmat('=', 1, 92));
+    fprintf('\n%s\n', repmat('=', 1, 108));
     fprintf('FINAL METHOD SUMMARY (%s parametrization)\n', datasets(i).parametrization);
-    fprintf('%s\n', repmat('=', 1, 92));
-    fprintf('%-18s %-12s %-12s %-12s %-12s\n', ...
-        'Method', 'Status', 'Final err(%)', 'Final d1', 'CPU time (s)');
-    fprintf('%s\n', repmat('-', 1, 92));
+    fprintf('%s\n', repmat('=', 1, 108));
+    fprintf('%-18s %-12s %-14s %-14s %-12s %-12s\n', ...
+        'Method', 'Status', 'Param err(%)', 'Output RMSE', 'Final d1', 'CPU time (s)');
+    fprintf('%s\n', repmat('-', 1, 108));
 
     for m = 1:numel(datasets(i).results)
         result = datasets(i).results(m);
@@ -253,9 +260,9 @@ for i = 1:numel(datasets)
         if ~isempty(theta_hat)
             final_d = theta_hat(end);
         end
-        fprintf('%-18s %-12s %-12.5f %-12.5f %-12.5f\n', ...
-            result_name(result), char_value(result.status), ...
-            scalar_value(result.final_err), final_d, scalar_value(result.total_time));
+        fprintf('%-18s %-12s %-14.5f %-14.5f %-12.5f %-12.5f\n', ...
+            display_method_label(result_name(result), datasets(i).parametrization), char_value(result.status), ...
+            scalar_value(result.final_err), final_output_rmse(result), final_d, scalar_value(result.total_time));
     end
 end
 end
@@ -299,31 +306,31 @@ end
 function fig = plot_metric_summary(dataset, method_names, colors)
 parametrization = dataset.parametrization;
 fig = figure('Name', sprintf('%s Saved Comparison Metrics', parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 18 14]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 22 16.5]);
 tl = tiledlayout(fig, 2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax1 = nexttile(tl);
 plot_metric_axis(ax1, dataset, method_names, colors, 'param_err', 'iteration');
-title(ax1, sprintf('Parameter error vs. iteration (%s)', parametrization));
+title(ax1, 'Parameter error vs. iteration');
 ylabel(ax1, '$e_\theta$ (\%)');
 
 ax2 = nexttile(tl);
 plot_metric_axis(ax2, dataset, method_names, colors, 'param_err', 'time');
-title(ax2, sprintf('Parameter error vs. time (%s)', parametrization));
+title(ax2, 'Parameter error vs. time');
 ylabel(ax2, '$e_\theta$ (\%)');
 
 ax3 = nexttile(tl);
 plot_metric_axis(ax3, dataset, method_names, colors, 'rmse_hist', 'iteration');
-title(ax3, sprintf('RMSE vs. iteration (%s)', parametrization));
+title(ax3, 'Output RMSE vs. iteration');
 ylabel(ax3, 'RMSE');
 
 ax4 = nexttile(tl);
 plot_metric_axis(ax4, dataset, method_names, colors, 'rmse_hist', 'time');
-title(ax4, sprintf('RMSE vs. time (%s)', parametrization));
+title(ax4, 'Output RMSE vs. time');
 ylabel(ax4, 'RMSE');
 
 legend(ax1, 'Location', 'best', 'FontSize', 8);
-title(tl, sprintf('Wiener System Identification: %s Parametrization', parametrization), 'FontWeight', 'bold');
+title(tl, sprintf('Wiener System Identification: %s Parametrization', parametrization), 'FontWeight', 'bold', 'FontSize', 11);
 end
 
 function plot_metric_axis(ax, dataset, method_names, colors, field_name, x_mode)
@@ -350,7 +357,7 @@ for m = 1:numel(dataset.results)
 
     n = min(numel(x), numel(y));
     plot(ax, x(1:n), y(1:n), '-', 'Color', colors(color_idx, :), ...
-        'DisplayName', latex_label(method));
+        'DisplayName', latex_label(display_method_label(method, dataset.parametrization)));
 end
 set(ax, 'YScale', 'log');
 grid(ax, 'on');
@@ -365,8 +372,9 @@ n_cols = 3;
 n_rows = ceil(n_params / n_cols);
 
 fig = figure('Name', sprintf('%s Parameter Trajectories', dataset.parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 18 5.2 * n_rows]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 25 6.4 * n_rows]);
 tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
+legend_ax = [];
 
 for p = 1:n_params
     ax = nexttile(tl);
@@ -383,8 +391,9 @@ for p = 1:n_params
         end
         theta_hist = double(result.theta_hist);
         iter_axis = 0:(size(theta_hist, 2) - 1);
-        plot(ax, iter_axis, theta_hist(p, :), 'Color', colors(color_idx, :), ...
-            'DisplayName', latex_label(method));
+        param_values = theta_hist(p, :);
+        plot(ax, iter_axis, param_values, 'Color', colors(color_idx, :), ...
+            'DisplayName', latex_label(display_method_label(method, dataset.parametrization)));
     end
     yline(ax, theta_true(p), 'k--', 'LineWidth', 1.1, 'DisplayName', '$\theta^\star$');
     grid(ax, 'on');
@@ -397,8 +406,8 @@ for p = 1:n_params
     end
     ylabel(ax, sprintf('$\\hat{%s}$', label));
     title(ax, sprintf('$%s$ trajectory', label));
-    if p == 1
-        legend(ax, 'Location', 'best', 'FontSize', 8);
+    if p == min(3, n_params)
+        legend_ax = ax;
     end
 end
 
@@ -406,7 +415,10 @@ for p = (n_params + 1):(n_rows * n_cols)
     axis(nexttile(tl), 'off');
 end
 
-title(tl, sprintf('%s Parametrization: Parameter Trajectories', dataset.parametrization), 'FontWeight', 'bold');
+if ~isempty(legend_ax)
+    legend(legend_ax, 'Location', 'northwest', 'FontSize', 8);
+end
+
 end
 
 function tf = is_ok_result(result)
@@ -460,6 +472,99 @@ else
 end
 end
 
+function value = final_output_rmse(result)
+value = NaN;
+if isfield(result, 'rmse_hist')
+    values = double(result.rmse_hist(:));
+elseif isfield(result, 'RMSE_hist')
+    values = double(result.RMSE_hist(:));
+else
+    return;
+end
+
+values = values(isfinite(values));
+if ~isempty(values)
+    value = values(end);
+end
+end
+
+function colors = build_distinct_colors(n)
+base = [ ...
+    0.000 0.447 0.698;  % blue
+    0.835 0.369 0.000;  % vermillion
+    0.000 0.620 0.451;  % bluish green
+    0.800 0.475 0.655;  % reddish purple
+    0.902 0.624 0.000;  % orange
+    0.337 0.706 0.914;  % sky blue
+    0.600 0.600 0.000;  % olive
+    0.494 0.184 0.556;  % deep purple
+    0.635 0.078 0.184;  % dark red
+    0.301 0.745 0.933;  % cyan
+    0.466 0.674 0.188;  % green
+    0.850 0.325 0.098]; % orange-red
+
+if n <= size(base, 1)
+    colors = base(1:n, :);
+    return;
+end
+
+extra = hsv(n - size(base, 1) + 1);
+colors = [base; extra(1:(n - size(base, 1)), :)];
+end
+
+function limits = robust_axis_limits(values, reference_value)
+values = double(values(:));
+values = values(isfinite(values));
+ref = double(reference_value);
+if isfinite(ref)
+    values = [values; ref];
+end
+
+if isempty(values)
+    limits = [-1 1];
+    return;
+end
+
+sorted_values = sort(values);
+lo = percentile_value(sorted_values, 5);
+hi = percentile_value(sorted_values, 95);
+if isfinite(ref)
+    lo = min(lo, ref);
+    hi = max(hi, ref);
+end
+
+if ~isfinite(lo) || ~isfinite(hi)
+    limits = [-1 1];
+    return;
+end
+
+if abs(hi - lo) < eps(max(1, abs(lo)))
+    pad = max(1e-3, 0.1 * max(1, abs(lo)));
+else
+    pad = 0.10 * (hi - lo);
+end
+limits = [lo - pad, hi + pad];
+end
+
+function value = percentile_value(sorted_values, percent)
+sorted_values = sorted_values(:);
+n = numel(sorted_values);
+if n == 1
+    value = sorted_values(1);
+    return;
+end
+
+rank = 1 + (n - 1) * percent / 100;
+lower_idx = floor(rank);
+upper_idx = ceil(rank);
+if lower_idx == upper_idx
+    value = sorted_values(lower_idx);
+else
+    weight = rank - lower_idx;
+    value = (1 - weight) * sorted_values(lower_idx) + weight * sorted_values(upper_idx);
+end
+end
+
 function dims = dims_vector(dims_struct)
 dims = [scalar_value(dims_struct.na), scalar_value(dims_struct.nb), ...
         scalar_value(dims_struct.nf), scalar_value(dims_struct.nd)];
@@ -501,6 +606,36 @@ else
     cells = {};
 end
 cells = cells(:).';
+end
+
+function labels = display_method_labels(method_names, parametrization)
+if nargin < 2
+    parametrization = '';
+end
+labels = cell(size(method_names));
+for i = 1:numel(method_names)
+    labels{i} = display_method_label(method_names{i}, parametrization);
+end
+end
+
+function label = display_method_label(method_name, parametrization)
+if nargin < 2
+    parametrization = '';
+end
+label = char_value(method_name);
+label = strrep(label, 'RGLS', 'RLS');
+label = strrep(label, 'GGHAM', 'GHAM');
+label = strrep(label, 'LGHAM', 'LHAM');
+if contains(label, 'HAM')
+    label = regexprep(label, '^WS-', '');
+end
+if strcmpi(char_value(parametrization), 'FSM')
+    if strcmp(label, 'WS-GNI')
+        label = 'Newton';
+    elseif strcmp(label, 'WS-GGI')
+        label = 'GI';
+    end
+end
 end
 
 function label = latex_label(label)

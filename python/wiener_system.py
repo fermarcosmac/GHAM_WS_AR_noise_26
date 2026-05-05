@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import torch
 from torch.func import jacfwd, jacrev
 
@@ -64,6 +65,46 @@ def split_theta(theta: torch.Tensor, dims: WienerDimensions) -> tuple[torch.Tens
     f_v = theta[idx_b_end:idx_f_end]
     d_v = theta[idx_f_end:]
     return a_v, b_v, f_v, d_v
+
+
+def stabilize_denominator_coeffs(coeffs: torch.Tensor, radius: float) -> torch.Tensor:
+    if coeffs.numel() == 0:
+        return coeffs
+
+    coeffs_np = coeffs.detach().cpu().numpy().astype(float).reshape(-1)
+    if not np.all(np.isfinite(coeffs_np)):
+        return coeffs
+
+    try:
+        poles = np.roots(np.concatenate(([1.0], coeffs_np)))
+    except np.linalg.LinAlgError:
+        return coeffs
+
+    if poles.size == 0:
+        return coeffs
+
+    pole_abs = np.abs(poles)
+    unstable = pole_abs >= radius
+    if not np.any(unstable):
+        return coeffs
+
+    poles[unstable] = radius * poles[unstable] / pole_abs[unstable]
+    stabilized_poly = np.poly(poles)
+    stabilized_coeffs = np.real_if_close(stabilized_poly[1:], tol=1000).real
+    return torch.as_tensor(stabilized_coeffs, dtype=coeffs.dtype, device=coeffs.device)
+
+
+def project_stable_theta(theta: torch.Tensor, dims: WienerDimensions, radius: float = 0.98) -> torch.Tensor:
+    theta_projected = theta.detach().clone()
+
+    if dims.na > 0:
+        theta_projected[: dims.na] = stabilize_denominator_coeffs(theta_projected[: dims.na], radius)
+
+    if dims.nd > 0:
+        d_start = dims.na + dims.nb + (dims.nf - 1)
+        theta_projected[d_start:] = stabilize_denominator_coeffs(theta_projected[d_start:], radius)
+
+    return theta_projected
 
 
 def simulate_wiener(r: torch.Tensor, nu: torch.Tensor, theta: torch.Tensor, dims: WienerDimensions) -> torch.Tensor:

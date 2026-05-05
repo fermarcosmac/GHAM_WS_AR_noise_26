@@ -11,6 +11,8 @@
     "WS-GGI",
     "WS-GGHAM-1-dH",
     "WS-GGHAM-2-dH",
+    "WS-GGHAM-2-H",
+    "WS-GGHAM-2-I",
     "WS-LGHAM-1-TIK",
     "WS-LGHAM-3-TIK"
   ],
@@ -23,7 +25,7 @@
   },
   "settings": {
     "lambda_g": 2000,
-    "K_max": 240,
+    "K_max": 300,
     "conv_threshold": 1e-8,
     "sigma_nu": 0.10,
     "burn_in": 100,

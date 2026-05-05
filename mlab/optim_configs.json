@@ -1,8 +1,8 @@
 {
   "methods": {
     "WS_GGI": {
-      "step_scale": 1.2e0,
-      "d_step_multiplier": 1.0,
+      "step_scale": 1.5e0,
+      "d_step_multiplier": 2.0,
       "initialization": {
         "mode": "physical",
         "linear_init_a": [0.0, 0.0],
@@ -51,7 +51,7 @@
       "notes": "Placeholder for gradient-root GHAM first-order update."
     },
     "WS_GGHAM_2_I": {
-      "eta":1.7e-4,
+      "eta":1e-4,
       "linear_operator": "identity",
       "order": 2,
       "notes": "Second-order gradient-root GHAM update for L = I."
@@ -67,7 +67,7 @@
           "eps_0": "automatic",
           "eta": 2e-1,
           "inverse_solver": "tikhonov",
-          "tikhonov_lambda": 1e-1,
+          "tikhonov_lambda": 5e-3,
           "order": 1,
           "notes": "Loss-root GHAM update using first-order correction term."
       },
@@ -75,7 +75,7 @@
       "eps_0": "automatic",
       "eta": 2e-1,
       "inverse_solver": "tikhonov",
-      "tikhonov_lambda": 1e-1,
+      "tikhonov_lambda": 5e-3,
       "order": 3,
       "notes": "Loss-root GHAM update using correction terms up to third order."
     }

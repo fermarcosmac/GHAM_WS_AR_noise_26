@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 
-from wiener_system import extract_loss_derivatives, params_to_loss
+from wiener_system import extract_loss_derivatives, params_to_loss, project_stable_theta
 
 
 def _build_step_scale_vector(
@@ -19,6 +19,23 @@ def _build_step_scale_vector(
     if dims.nd > 0 and d_step_multiplier != 1.0:
         scale[-dims.nd :] = d_step_multiplier
     return scale
+
+
+def _finalize_update(
+    theta_new: torch.Tensor,
+    theta_previous: torch.Tensor,
+    aux_state: dict[str, Any],
+    method_cfg: dict[str, Any],
+    dims,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    if not torch.all(torch.isfinite(theta_new)):
+        aux_state["message"] = "Rejected non-finite update; kept previous parameters."
+        return theta_previous.detach().clone(), aux_state
+
+    if method_cfg.get("stability_projection", True):
+        radius = float(method_cfg.get("stability_radius", 0.98))
+        theta_new = project_stable_theta(theta_new, dims, radius=radius)
+    return theta_new, aux_state
 
 
 def method_parameter_update(
@@ -40,42 +57,42 @@ def method_parameter_update(
     if name == "WS-GGI":
         theta_new, derivatives = ws_ggi_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     if name == "WS-GNI":
         theta_new, derivatives = ws_gni_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     if name in {"WS-GGHAM-1-DH", "WS_GGHAM_1_DH"}:
         theta_new, derivatives = ws_ggham_1_dh_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     if name in {"WS-GGHAM-2-I", "WS_GGHAM_2_I"}:
         theta_new, derivatives = ws_ggham_2_i_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     if name in {"WS-GGHAM-2-DH", "WS_GGHAM_2_DH"}:
         theta_new, derivatives = ws_ggham_2_dh_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     if name in {"WS-GGHAM-2-H", "WS_GGHAM_2_H"}:
         theta_new, derivatives = ws_ggham_2_h_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     if name in {"WS-LGHAM-1-TIK", "WS_LGHAM_1_TIK"}:
         theta_new, derivatives = ws_lgham_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims, order=1)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     if name in {"WS-LGHAM-3-TIK", "WS_LGHAM_3_TIK"}:
         theta_new, derivatives = ws_lgham_update(theta_hat, method_cfg, r=r, nu=nu, c=c, dims=dims, order=3)
         aux_state["derivatives"] = derivatives
-        return theta_new, aux_state
+        return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     derivative_order = int(method_cfg.get("derivative_order", 1))
     aux_state["derivatives"] = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=min(derivative_order, 3))
