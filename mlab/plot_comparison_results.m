@@ -8,7 +8,7 @@ clear; clc; close all;
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
-experiment_name = 'example_1';
+experiment_name = 'example_CSTR';
 mode = 'MONTECARLO';  % EXAMPLE or MONTECARLO
 data_files = { ...
     fullfile(repo_root, 'results', experiment_name, sprintf('comparison_fsm_%s.mat', lower(mode))), ...
@@ -65,6 +65,10 @@ for i = 1:numel(datasets)
     filename = sprintf('parameter_trajectories_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
     export_if_requested(fig_params, fig_dir, filename, export_figures);
 
+    fig_output = plot_output_signals(datasets(i), method_names, colors, 300);
+    output_filename = sprintf('output_signals_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
+    export_if_requested(fig_output, fig_dir, output_filename, export_figures);
+
     if isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
         fig_mc = plot_montecarlo_summary(datasets(i), method_names, colors);
         mc_filename = sprintf('montecarlo_summary_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
@@ -89,6 +93,11 @@ ds.file = file_name;
 ds.parametrization = char_value(loaded.parametrization);
 ds.generated_at = char_value(loaded.generated_at);
 ds.experiment = loaded.experiment;
+if isfield(loaded, 'example_data')
+    ds.example_data = loaded.example_data;
+else
+    ds.example_data = [];
+end
 if isfield(loaded, 'mc_summary')
     ds.mc_summary = loaded.mc_summary;
 else
@@ -421,6 +430,114 @@ end
 
 end
 
+function fig = plot_output_signals(dataset, method_names, colors, zoom_samples)
+parametrization = dataset.parametrization;
+
+if isempty(dataset.example_data) || ~all(isfield(dataset.example_data, {'r', 'nu', 'c'}))
+    fig = figure('Name', sprintf('%s Output Signals', parametrization), ...
+        'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
+    ax = axes(fig);
+    text(ax, 0.5, 0.5, 'No saved output signal data available.', ...
+        'HorizontalAlignment', 'center', 'Units', 'normalized');
+    axis(ax, 'off');
+    return;
+end
+
+r = double(dataset.example_data.r(:));
+nu = double(dataset.example_data.nu(:));
+c = double(dataset.example_data.c(:));
+n_samples = min([zoom_samples, numel(r), numel(nu), numel(c)]);
+if n_samples == 0
+    fig = figure('Name', sprintf('%s Output Signals', parametrization), ...
+        'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
+    ax = axes(fig);
+    text(ax, 0.5, 0.5, 'Saved output signal data is empty.', ...
+        'HorizontalAlignment', 'center', 'Units', 'normalized');
+    axis(ax, 'off');
+    return;
+end
+
+x = 1:n_samples;
+dims = dataset.experiment.dims;
+na = scalar_value(dims.na);
+nb = scalar_value(dims.nb);
+nf = scalar_value(dims.nf);
+nd = scalar_value(dims.nd);
+
+estimate_signals = {};
+estimate_labels = {};
+estimate_colors = [];
+for m = 1:numel(dataset.results)
+    result = dataset.results(m);
+    if ~is_plotted_result(result) || isempty(result.theta_hat)
+        continue;
+    end
+
+    method = result_name(result);
+    color_idx = find(strcmp(method_names, method), 1, 'first');
+    if isempty(color_idx)
+        continue;
+    end
+
+    c_est = simulate_wiener(r, nu, double(result.theta_hat(:)), na, nb, nf, nd, numel(c));
+    if isempty(c_est) || ~any(isfinite(c_est))
+        continue;
+    end
+
+    estimate_signals{end + 1} = c_est(1:n_samples); %#ok<AGROW>
+    estimate_labels{end + 1} = display_method_label(method, dataset.parametrization); %#ok<AGROW>
+    estimate_colors(end + 1, :) = colors(color_idx, :); %#ok<AGROW>
+end
+
+n_estimates = numel(estimate_signals);
+fig_height = max(9.5, 2.25 * max(n_estimates, 1) + 1.2);
+fig = figure('Name', sprintf('%s Output Signals', parametrization), ...
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 fig_height]);
+
+if n_estimates == 0
+    ax = axes(fig);
+    text(ax, 0.5, 0.5, 'No plottable estimated output signals available.', ...
+        'HorizontalAlignment', 'center', 'Units', 'normalized');
+    axis(ax, 'off');
+    return;
+end
+
+tl = tiledlayout(fig, n_estimates, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+axes_list = gobjects(n_estimates, 1);
+measured_color = ones(1,3)*0.3;
+
+for idx = 1:n_estimates
+    ax = nexttile(tl);
+    axes_list(idx) = ax;
+    hold(ax, 'on');
+    plot(ax, x, c(1:n_samples), 'Color', measured_color, ...
+        'LineWidth', 1.1, 'DisplayName', 'Measured output');
+    plot(ax, x, estimate_signals{idx}, '.', ...
+        'Color', estimate_colors(idx, :), ...
+        'MarkerSize', 5.5, ...
+        'LineWidth', 0.9, ...
+        'DisplayName', latex_label(estimate_labels{idx}));
+    grid(ax, 'on');
+    box(ax, 'on');
+    xlim(ax, [1 n_samples]);
+    minmax = [min(c(1:n_samples)), max(c(1:n_samples))];
+    margin = 0.1*max(abs(minmax));
+    ylim(ax, [minmax(1)-margin, minmax(2)+margin])
+    ylabel(ax, '$c(t)$');
+    title(ax, latex_label(estimate_labels{idx}), 'FontWeight', 'normal');
+    if idx == 1
+        %legend(ax, 'Location', 'best', 'FontSize', 8);
+    end
+    if idx < n_estimates
+        set(ax, 'XTickLabel', []);
+    else
+        xlabel(ax, 'Sample $t$');
+    end
+end
+
+linkaxes(axes_list, 'x');
+end
+
 function tf = is_ok_result(result)
 tf = strcmpi(strtrim(char_value(result.status)), 'ok');
 end
@@ -485,6 +602,32 @@ end
 values = values(isfinite(values));
 if ~isempty(values)
     value = values(end);
+end
+end
+
+function c_sim = simulate_wiener(r, nu, theta, na, nb, nf, nd, T)
+expected_n = na + nb + (nf - 1) + nd;
+assert(numel(theta) == expected_n, 'theta has wrong dimension.');
+
+a_v = theta(1:na);
+b_v = theta(na + 1:na + nb);
+f_v = theta(na + nb + 1:na + nb + (nf - 1));
+d_v = theta(na + nb + (nf - 1) + 1:end);
+
+den_lin = [1; a_v(:)];
+num_lin = [0; b_v(:)];
+alpha = filter(num_lin.', den_lin.', r);
+
+poly_coeffs = [flipud(f_v(:)); 1; 0];
+beta = polyval(poly_coeffs.', alpha);
+
+den_ar = [1; d_v(:)];
+e = filter(1, den_ar.', nu);
+
+c_sim = beta(:) + e(:);
+
+if nargin >= 8
+    c_sim = c_sim(1:T);
 end
 end
 
