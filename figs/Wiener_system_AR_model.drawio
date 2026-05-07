@@ -1,10 +1,10 @@
-<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0" version="29.6.6">
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0">
   <diagram name="Página-1" id="K6F6W_qDF6kCJ8d6pElh">
-    <mxGraphModel dx="622" dy="1364" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="1" shadow="0">
+    <mxGraphModel dx="898" dy="489" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="1" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="sDn6xgN2gHOOVQ95LUdY-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="$$\frac{A(z)}{B(z)}$$" vertex="1">
+        <mxCell id="sDn6xgN2gHOOVQ95LUdY-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="$$\frac{B(z^{-1})}{A(z^{-1})}$$" vertex="1">
           <mxGeometry height="50" width="70" x="152" y="500" as="geometry" />
         </mxCell>
         <mxCell id="sDn6xgN2gHOOVQ95LUdY-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="$$F(\cdot)$$" vertex="1">
@@ -13,8 +13,8 @@
         <mxCell id="sDn6xgN2gHOOVQ95LUdY-9" edge="1" parent="1" source="sDn6xgN2gHOOVQ95LUdY-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;endArrow=openThin;endFill=0;" target="sDn6xgN2gHOOVQ95LUdY-5">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="sDn6xgN2gHOOVQ95LUdY-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="$$\frac{1}{1+D(z)}$$" vertex="1">
-          <mxGeometry height="50" width="70" x="391" y="417" as="geometry" />
+        <mxCell id="sDn6xgN2gHOOVQ95LUdY-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="$$\frac{1}{1+D(z^{-1})}$$" vertex="1">
+          <mxGeometry height="50" width="79" x="387" y="417" as="geometry" />
         </mxCell>
         <mxCell id="sDn6xgN2gHOOVQ95LUdY-5" parent="1" style="shape=orEllipse;perimeter=ellipsePerimeter;whiteSpace=wrap;html=1;backgroundOutline=1;" value="" vertex="1">
           <mxGeometry height="10" width="10" x="421" y="520" as="geometry" />
@@ -43,7 +43,7 @@
             <mxPoint x="560" y="525" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="sDn6xgN2gHOOVQ95LUdY-12" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="$$r(t)$$" vertex="1">
+        <mxCell id="sDn6xgN2gHOOVQ95LUdY-12" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="$$u(t)$$" vertex="1">
           <mxGeometry height="30" width="60" x="88" y="490" as="geometry" />
         </mxCell>
         <mxCell id="sDn6xgN2gHOOVQ95LUdY-13" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="$$\alpha(t)$$" vertex="1">
