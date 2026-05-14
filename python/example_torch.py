@@ -14,7 +14,15 @@ sys.path.insert(0, str(ROOT))
 
 from common import ROOT as PY_ROOT, build_param_names, build_plot_labels, choose_dtype, default_device, load_json_config, make_valid_method_key, now, print_iteration_table, set_seed
 from methods import method_parameter_update
-from wiener_system import WienerDimensions, build_state_matrix, generate_example_data, initialize_method_state, parameter_to_loss, simulate_wiener
+from wiener_system import (
+    WienerDimensions,
+    estimate_innovations_from_signal_residual,
+    fsm_kwargs_from_config,
+    generate_example_data,
+    initialize_method_state,
+    parameter_to_loss,
+    simulate_wiener,
+)
 
 
 def load_experiment_config(experiment_name: str) -> dict[str, Any]:
@@ -41,15 +49,15 @@ def build_dims_and_theta(cfg: dict[str, Any], *, dtype: torch.dtype, device: tor
 
 
 def main() -> None:
-    experiment_name = "example_1"
-    default_method_name = "WS-GGI"
+    experiment_name = "example_CSTR"
+    default_method_name = "WS-GGHAM-1-dH"
 
     device = default_device()
     dtype = choose_dtype()
     exp_cfg = load_experiment_config(experiment_name)
     dims, theta_true = build_dims_and_theta(exp_cfg, dtype=dtype, device=device)
 
-    seed = int(exp_cfg.get("seed", 42))
+    seed = int(exp_cfg.get("seed", 52))
     settings = exp_cfg["settings"]
     lambda_g = int(settings["lambda_g"])
     burn_in = int(settings["burn_in"])
@@ -65,10 +73,9 @@ def main() -> None:
     r, nu, c = data["r"], data["nu"], data["c"]
 
     method_cfg = load_json_config(config_file)["methods"][make_valid_method_key(method_name)]
+    fsm_kwargs = fsm_kwargs_from_config(method_cfg)
 
     init_state = initialize_method_state(method_cfg, r, c, dims)
-    alpha_hat = init_state["alpha_hat"]
-    e_hat = init_state["e_hat"]
     theta_hat = init_state["theta_hat"]
 
     theta_hist = torch.zeros((dims.n_params, K_max), dtype=dtype, device=device)
@@ -83,24 +90,23 @@ def main() -> None:
 
     for k in tqdm(range(K_max), desc=method_name, unit="iter"):
         t0 = now()
-        phi_hat = build_state_matrix(alpha_hat, e_hat, r, dims)
-        theta_new, _ = method_parameter_update(method_name, method_cfg, phi_hat, c, theta_hat, r=r, nu=nu, dims=dims, iter_idx=k)
-
-        residual_eq = c - phi_hat @ theta_new
-        a_hat = theta_new[:dims.na]
-        b_hat = theta_new[dims.na:dims.na + dims.nb]
-        d_hat = theta_new[dims.na + dims.nb + (dims.nf - 1):]
-
-        den_ar_hat = torch.cat([torch.ones(1, dtype=dtype, device=device), d_hat])
-        e_hat = simulate_ar_noise(residual_eq, den_ar_hat)
-
-        den_lin_hat = torch.cat([torch.ones(1, dtype=dtype, device=device), a_hat])
-        num_lin_hat = torch.cat([torch.zeros(1, dtype=dtype, device=device), b_hat])
-        alpha_hat = simulate_linear_block(r, den_lin_hat, num_lin_hat)
+        innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
+        theta_new, _ = method_parameter_update(
+            method_name,
+            method_cfg,
+            None,
+            c,
+            theta_hat,
+            r=r,
+            nu=innovation_state["nu_hat"],
+            dims=dims,
+            iter_idx=k,
+        )
 
         rel_change[k] = torch.linalg.vector_norm(theta_new - theta_hat) / (torch.linalg.vector_norm(theta_hat) + 1e-15)
         theta_hat = theta_new
         theta_hist[:, k] = theta_hat
+
         param_err[k] = torch.linalg.vector_norm(theta_hat - theta_true) / torch.linalg.vector_norm(theta_true) * 100.0
         c_sim = simulate_wiener(r, nu, theta_hat, dims)
         rmse_hist[k] = torch.sqrt(torch.mean((c - c_sim).pow(2)))
@@ -136,7 +142,8 @@ def main() -> None:
         print(f"{name:<8}  {est:<12.5f}  {true:<12.5f}")
     print("-" * 40)
     print(f"Final err(%) = {param_err[-1].item():.5f}")
-    print(f"Final loss   = {parameter_to_loss(theta_hat, r, nu, c, dims).item():.5f}")
+    final_innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
+    print(f"Final loss   = {parameter_to_loss(theta_hat, r, final_innovation_state['nu_hat'], c, dims, **fsm_kwargs).item():.5f}")
 
     c_sim_final = simulate_wiener(r, nu, theta_hat, dims).detach().cpu().numpy()
     c_np = c.detach().cpu().numpy()

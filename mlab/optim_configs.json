@@ -51,7 +51,7 @@
       "notes": "Placeholder for gradient-root GHAM first-order update."
     },
     "WS_GGHAM_2_I": {
-      "eta":1e-4,
+      "eta":1e-5,
       "linear_operator": "identity",
       "order": 2,
       "notes": "Second-order gradient-root GHAM update for L = I."

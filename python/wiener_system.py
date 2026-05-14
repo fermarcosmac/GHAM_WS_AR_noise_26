@@ -67,6 +67,161 @@ def split_theta(theta: torch.Tensor, dims: WienerDimensions) -> tuple[torch.Tens
     return a_v, b_v, f_v, d_v
 
 
+def simulate_signal_path(r: torch.Tensor, theta: torch.Tensor, dims: WienerDimensions) -> tuple[torch.Tensor, torch.Tensor]:
+    a_v, b_v, f_v, _ = split_theta(theta, dims)
+    den_lin = torch.cat([torch.ones(1, dtype=theta.dtype, device=theta.device), a_v])
+    num_lin = torch.cat([torch.zeros(1, dtype=theta.dtype, device=theta.device), b_v])
+    alpha = lfilter_1d(r, den_lin, num_lin)
+    beta = polynomial_nonlinearity(alpha, f_v)
+    return alpha, beta
+
+
+def fsm_kwargs_from_config(method_cfg: dict[str, Any]) -> dict[str, int | None]:
+    return {
+        "fsm_tau_g": method_cfg.get("fsm_tau_g", method_cfg.get("tau_g")),
+        "fsm_tau_h": method_cfg.get("fsm_tau_h", method_cfg.get("tau_h")),
+        "fsm_n_freq": method_cfg.get("fsm_n_freq", method_cfg.get("n_freq")),
+    }
+
+
+def _next_power_of_two(value: int) -> int:
+    return 1 << max(int(value) - 1, 1).bit_length()
+
+
+def _resolve_fsm_lengths(
+    record_len: int,
+    *,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
+) -> tuple[int, int, int]:
+    default_tau = min(128, max(record_len, 1))
+    tau_g = int(fsm_tau_g) if fsm_tau_g is not None else default_tau
+    tau_h = int(fsm_tau_h) if fsm_tau_h is not None else default_tau
+    tau_g = max(1, min(tau_g, max(record_len, 1)))
+    tau_h = max(1, min(tau_h, max(record_len, 1)))
+
+    min_freq = max(tau_g + 1, tau_h, 2)
+    n_freq = int(fsm_n_freq) if fsm_n_freq is not None else _next_power_of_two(4 * min_freq)
+    n_freq = max(n_freq, min_freq)
+    return tau_g, tau_h, n_freq
+
+
+def _causal_fir_from_lags(x: torch.Tensor, coeffs: torch.Tensor, *, first_lag: int) -> torch.Tensor:
+    if coeffs.numel() == 0:
+        return torch.zeros_like(x)
+
+    if first_lag == 0:
+        if coeffs.numel() == 1:
+            lag_matrix = x.reshape(-1, 1)
+        else:
+            lag_matrix = torch.cat([x.reshape(-1, 1), build_lag_matrix(x, coeffs.numel() - 1)], dim=1)
+        return lag_matrix @ coeffs
+
+    lag_matrix = build_lag_matrix(x, first_lag + coeffs.numel() - 1)
+    start = first_lag - 1
+    return lag_matrix[:, start : start + coeffs.numel()] @ coeffs
+
+
+def fsm_impulse_responses(
+    theta: torch.Tensor,
+    dims: WienerDimensions,
+    *,
+    record_len: int,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    tau_g, tau_h, n_freq = _resolve_fsm_lengths(
+        record_len,
+        fsm_tau_g=fsm_tau_g,
+        fsm_tau_h=fsm_tau_h,
+        fsm_n_freq=fsm_n_freq,
+    )
+    a_v, b_v, _, d_v = split_theta(theta, dims)
+
+    den_lin = torch.cat([torch.ones(1, dtype=theta.dtype, device=theta.device), a_v])
+    num_lin = torch.cat([torch.zeros(1, dtype=theta.dtype, device=theta.device), b_v])
+    g_full = torch.fft.irfft(fft_freqz(num_lin.reshape(1, -1), den_lin.reshape(1, -1), n_fft=n_freq), n=n_freq).reshape(-1)
+    g = g_full[1 : tau_g + 1]
+
+    den_ar = torch.cat([torch.ones(1, dtype=theta.dtype, device=theta.device), d_v])
+    num_ar = torch.ones(1, dtype=theta.dtype, device=theta.device)
+    h_full = torch.fft.irfft(fft_freqz(num_ar.reshape(1, -1), den_ar.reshape(1, -1), n_fft=n_freq), n=n_freq).reshape(-1)
+    h = h_full[:tau_h]
+    return g, h
+
+
+def simulate_signal_path_fsm(
+    r: torch.Tensor,
+    theta: torch.Tensor,
+    dims: WienerDimensions,
+    *,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    g, _ = fsm_impulse_responses(
+        theta,
+        dims,
+        record_len=r.numel(),
+        fsm_tau_g=fsm_tau_g,
+        fsm_tau_h=fsm_tau_h,
+        fsm_n_freq=fsm_n_freq,
+    )
+    _, _, f_v, _ = split_theta(theta, dims)
+    alpha = _causal_fir_from_lags(r, g, first_lag=1)
+    beta = polynomial_nonlinearity(alpha, f_v)
+    return alpha, beta
+
+
+def simulate_wiener_fsm(
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    theta: torch.Tensor,
+    dims: WienerDimensions,
+    *,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
+) -> torch.Tensor:
+    g, h = fsm_impulse_responses(
+        theta,
+        dims,
+        record_len=r.numel(),
+        fsm_tau_g=fsm_tau_g,
+        fsm_tau_h=fsm_tau_h,
+        fsm_n_freq=fsm_n_freq,
+    )
+    _, _, f_v, _ = split_theta(theta, dims)
+    alpha = _causal_fir_from_lags(r, g, first_lag=1)
+    beta = polynomial_nonlinearity(alpha, f_v)
+    e = _causal_fir_from_lags(nu, h, first_lag=0)
+    return beta + e
+
+
+def prediction_error_innovations(
+    theta: torch.Tensor,
+    r: torch.Tensor,
+    c: torch.Tensor,
+    dims: WienerDimensions,
+    *,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
+) -> torch.Tensor:
+    _, beta_hat = simulate_signal_path_fsm(
+        r,
+        theta,
+        dims,
+        fsm_tau_g=fsm_tau_g,
+        fsm_tau_h=fsm_tau_h,
+        fsm_n_freq=fsm_n_freq,
+    )
+    _, _, _, d_hat = split_theta(theta, dims)
+    return apply_ar_denominator(c - beta_hat, d_hat)
+
+
 def stabilize_denominator_coeffs(coeffs: torch.Tensor, radius: float) -> torch.Tensor:
     if coeffs.numel() == 0:
         return coeffs
@@ -108,12 +263,8 @@ def project_stable_theta(theta: torch.Tensor, dims: WienerDimensions, radius: fl
 
 
 def simulate_wiener(r: torch.Tensor, nu: torch.Tensor, theta: torch.Tensor, dims: WienerDimensions) -> torch.Tensor:
-    a_v, b_v, f_v, d_v = split_theta(theta, dims)
-    den_lin = torch.cat([torch.ones(1, dtype=theta.dtype, device=theta.device), a_v])
-    num_lin = torch.cat([torch.zeros(1, dtype=theta.dtype, device=theta.device), b_v])
-    alpha = lfilter_1d(r, den_lin, num_lin)
-
-    beta = polynomial_nonlinearity(alpha, f_v)
+    _, _, _, d_v = split_theta(theta, dims)
+    _, beta = simulate_signal_path(r, theta, dims)
 
     den_ar = torch.cat([torch.ones(1, dtype=theta.dtype, device=theta.device), d_v])
     num_ar = torch.ones(1, dtype=theta.dtype, device=theta.device)
@@ -121,14 +272,102 @@ def simulate_wiener(r: torch.Tensor, nu: torch.Tensor, theta: torch.Tensor, dims
     return beta + e
 
 
-def params_to_loss(theta: torch.Tensor, r: torch.Tensor, nu: torch.Tensor, c: torch.Tensor, dims: WienerDimensions) -> torch.Tensor:
-    c_hat = simulate_wiener(r, nu, theta, dims)
-    residual = c - c_hat
-    return torch.mean(residual.pow(2))
+def apply_ar_denominator(e_hat: torch.Tensor, d_coeffs: torch.Tensor) -> torch.Tensor:
+    if d_coeffs.numel() == 0:
+        return e_hat
+    e_lags = build_lag_matrix(e_hat, d_coeffs.numel())
+    return e_hat + e_lags @ d_coeffs
 
 
-def parameter_to_loss(theta: torch.Tensor, r: torch.Tensor, nu: torch.Tensor, c: torch.Tensor, dims: WienerDimensions) -> torch.Tensor:
-    return params_to_loss(theta, r, nu, c, dims)
+def estimate_innovations_from_signal_residual(
+    theta: torch.Tensor,
+    r: torch.Tensor,
+    c: torch.Tensor,
+    dims: WienerDimensions,
+    *,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
+) -> dict[str, torch.Tensor]:
+    alpha_hat, beta_hat = simulate_signal_path_fsm(
+        r,
+        theta,
+        dims,
+        fsm_tau_g=fsm_tau_g,
+        fsm_tau_h=fsm_tau_h,
+        fsm_n_freq=fsm_n_freq,
+    )
+    _, _, _, d_hat = split_theta(theta, dims)
+    e_hat = c - beta_hat
+    nu_hat = apply_ar_denominator(e_hat, d_hat)
+    return {
+        "alpha_hat": alpha_hat.detach(),
+        "beta_hat": beta_hat.detach(),
+        "e_hat": e_hat.detach(),
+        "nu_hat": nu_hat.detach(),
+    }
+
+
+def estimate_innovations_from_state(phi_hat: torch.Tensor, c: torch.Tensor, theta: torch.Tensor) -> torch.Tensor:
+    return (c - phi_hat @ theta).detach()
+
+
+def update_latent_state_from_innovations(
+    theta: torch.Tensor,
+    r: torch.Tensor,
+    nu_hat: torch.Tensor,
+    dims: WienerDimensions,
+) -> dict[str, torch.Tensor]:
+    a_hat, b_hat, _, d_hat = split_theta(theta, dims)
+
+    den_ar_hat = torch.cat([torch.ones(1, dtype=theta.dtype, device=theta.device), d_hat])
+    e_hat = lfilter_1d(nu_hat, den_ar_hat, torch.ones(1, dtype=theta.dtype, device=theta.device))
+
+    den_lin_hat = torch.cat([torch.ones(1, dtype=theta.dtype, device=theta.device), a_hat])
+    num_lin_hat = torch.cat([torch.zeros(1, dtype=theta.dtype, device=theta.device), b_hat])
+    alpha_hat = lfilter_1d(r, den_lin_hat, num_lin_hat)
+
+    return {
+        "alpha_hat": alpha_hat.detach(),
+        "e_hat": e_hat.detach(),
+        "nu_hat": nu_hat.detach(),
+    }
+
+
+def params_to_loss(
+    theta: torch.Tensor,
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    c: torch.Tensor,
+    dims: WienerDimensions,
+    *,
+    freeze_innovation: bool = True,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
+) -> torch.Tensor:
+    del nu, freeze_innovation
+    innovations = prediction_error_innovations(
+        theta,
+        r,
+        c,
+        dims,
+        fsm_tau_g=fsm_tau_g,
+        fsm_tau_h=fsm_tau_h,
+        fsm_n_freq=fsm_n_freq,
+    )
+    return torch.mean(innovations.pow(2))
+
+
+def parameter_to_loss(
+    theta: torch.Tensor,
+    r: torch.Tensor,
+    nu: torch.Tensor,
+    c: torch.Tensor,
+    dims: WienerDimensions,
+    **fsm_kwargs: int | None,
+) -> torch.Tensor:
+    return params_to_loss(theta, r, nu, c, dims, **fsm_kwargs)
 
 
 def extract_loss_derivatives(
@@ -138,11 +377,24 @@ def extract_loss_derivatives(
     c: torch.Tensor,
     dims: WienerDimensions,
     max_order: int = 1,
+    *,
+    fsm_tau_g: int | None = None,
+    fsm_tau_h: int | None = None,
+    fsm_n_freq: int | None = None,
 ) -> dict[str, torch.Tensor]:
     if max_order < 1 or max_order > 3:
         raise ValueError("Only derivative orders 1..3 are supported.")
 
-    loss_fn = lambda th: params_to_loss(th, r, nu, c, dims)
+    loss_fn = lambda th: params_to_loss(
+        th,
+        r,
+        nu,
+        c,
+        dims,
+        fsm_tau_g=fsm_tau_g,
+        fsm_tau_h=fsm_tau_h,
+        fsm_n_freq=fsm_n_freq,
+    )
     loss = loss_fn(theta)
     grad = jacrev(loss_fn)(theta)
 

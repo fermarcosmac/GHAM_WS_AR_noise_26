@@ -1,5 +1,5 @@
 {
-  "mode": "EXAMPLE",
+  "mode": "MONTECARLO",
   "seed": 42,
   "N_MC": 30,
   "make_local_plots": true,
@@ -24,7 +24,7 @@
     "theta_true": [-0.31, -0.27, 0.23, 0.98, 0.32, -0.40]
   },
   "settings": {
-    "lambda_g": 2000,
+    "lambda_g": 10000,
     "K_max": 300,
     "conv_threshold": 1e-8,
     "sigma_nu": 0.10,

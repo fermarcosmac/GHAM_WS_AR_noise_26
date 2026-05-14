@@ -28,7 +28,18 @@ from common import (
     set_seed,
 )
 from methods import method_parameter_update
-from wiener_system import WienerDimensions, generate_example_data, initialize_method_state, simulate_wiener
+from wiener_system import (
+    WienerDimensions,
+    build_state_matrix,
+    estimate_innovations_from_signal_residual,
+    estimate_innovations_from_state,
+    fsm_kwargs_from_config,
+    generate_example_data,
+    initialize_method_state,
+    parameter_to_loss,
+    simulate_wiener,
+    update_latent_state_from_innovations,
+)
 
 PYTHON_EXTRA_METHODS = ["WS-GGHAM-2-I", "WS-GGHAM-2-H"]
 
@@ -138,12 +149,24 @@ def run_identification_method(
     verbose: bool = True,
 ) -> dict[str, Any]:
     init_state = initialize_method_state(method_cfg, r, c, dims)
+    alpha_hat = init_state["alpha_hat"]
+    e_hat = init_state["e_hat"]
     theta_hat = init_state["theta_hat"]
+    innovation_mode = str(method_cfg.get("innovation_estimator", "fsm_inverse")).lower()
+    fsm_kwargs = fsm_kwargs_from_config(method_cfg)
+    nu_init = method_cfg.get("innovation_init", 1e-6)
+    if isinstance(nu_init, (int, float)):
+        nu_hat = torch.full_like(c, float(nu_init))
+    else:
+        nu_hat = torch.as_tensor(nu_init, dtype=c.dtype, device=c.device).reshape(-1)
+        if nu_hat.numel() != c.numel():
+            raise ValueError("innovation_init must be scalar or have the same length as the output record.")
 
     theta_hist = torch.zeros((dims.n_params, K_max), dtype=r.dtype, device=r.device)
     param_err = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
     rel_change = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
     rmse_hist = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
+    est_loss_hist = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
     iter_time = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
     cum_time = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
 
@@ -156,8 +179,14 @@ def run_identification_method(
 
     theta_hist[:, 0] = theta_hat
     param_err[0] = torch.linalg.vector_norm(theta_hat - theta_true) / torch.linalg.vector_norm(theta_true) * 100.0
+    if innovation_mode not in {"state_residual", "fsm_inverse"}:
+        raise ValueError(f"Unknown innovation_estimator '{innovation_mode}'.")
     c_sim_0 = simulate_wiener(r, nu, theta_hat, dims)
     rmse_hist[0] = torch.sqrt(torch.mean((c - c_sim_0).pow(2)))
+    if innovation_mode == "fsm_inverse":
+        innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
+        nu_hat = innovation_state["nu_hat"]
+    est_loss_hist[0] = parameter_to_loss(theta_hat, r, nu_hat, c, dims, **fsm_kwargs)
     rel_change[0] = 0.0
     iter_time[0] = 0.0
     cum_time[0] = 0.0
@@ -168,19 +197,27 @@ def run_identification_method(
             param_err[k] = param_err[k - 1]
             rel_change[k] = 0.0
             rmse_hist[k] = rmse_hist[k - 1]
+            est_loss_hist[k] = est_loss_hist[k - 1]
             iter_time[k] = 0.0
             cum_time[k] = cum_time[k - 1]
             continue
 
         t0 = now()
+        if innovation_mode == "fsm_inverse":
+            innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
+            nu_hat = innovation_state["nu_hat"]
+            phi_hat = None
+        else:
+            phi_hat = build_state_matrix(alpha_hat, e_hat, r, dims)
+
         theta_new, aux_state = method_parameter_update(
             method_name,
             method_cfg,
-            None,
+            phi_hat,
             c,
             theta_hat,
             r=r,
-            nu=nu,
+            nu=nu_hat,
             dims=dims,
             iter_idx=k,
         )
@@ -199,9 +236,22 @@ def run_identification_method(
         theta_hat = theta_new
         theta_hist[:, k] = theta_hat
 
+        if innovation_mode == "fsm_inverse":
+            innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
+            nu_hat = innovation_state["nu_hat"]
+            alpha_hat = innovation_state["alpha_hat"]
+            e_hat = innovation_state["e_hat"]
+        else:
+            assert phi_hat is not None
+            nu_hat = estimate_innovations_from_state(phi_hat, c, theta_hat)
+            latent_state = update_latent_state_from_innovations(theta_hat, r, nu_hat, dims)
+            alpha_hat = latent_state["alpha_hat"]
+            e_hat = latent_state["e_hat"]
+
         param_err[k] = torch.linalg.vector_norm(theta_hat - theta_true) / torch.linalg.vector_norm(theta_true) * 100.0
         c_sim = simulate_wiener(r, nu, theta_hat, dims)
         rmse_hist[k] = torch.sqrt(torch.mean((c - c_sim).pow(2)))
+        est_loss_hist[k] = parameter_to_loss(theta_hat, r, nu_hat, c, dims, **fsm_kwargs)
 
         iter_time[k] = now() - t0
         cum_time[k] = cum_time[k - 1] + iter_time[k]
@@ -220,6 +270,7 @@ def run_identification_method(
         param_err = param_err[:iter_count]
         rel_change = rel_change[:iter_count]
         rmse_hist = rmse_hist[:iter_count]
+        est_loss_hist = est_loss_hist[:iter_count]
         iter_time = iter_time[:iter_count]
         cum_time = cum_time[:iter_count]
         final_err = float(param_err[-1].item())
@@ -230,6 +281,7 @@ def run_identification_method(
         param_err = torch.zeros(0, dtype=r.dtype, device=r.device)
         rel_change = torch.zeros(0, dtype=r.dtype, device=r.device)
         rmse_hist = torch.zeros(0, dtype=r.dtype, device=r.device)
+        est_loss_hist = torch.zeros(0, dtype=r.dtype, device=r.device)
         iter_time = torch.zeros(0, dtype=r.dtype, device=r.device)
         cum_time = torch.zeros(0, dtype=r.dtype, device=r.device)
         final_err = float("nan")
@@ -262,6 +314,7 @@ def run_identification_method(
         "param_err": param_err.detach().cpu().numpy(),
         "rel_change": rel_change.detach().cpu().numpy(),
         "rmse_hist": rmse_hist.detach().cpu().numpy(),
+        "est_loss_hist": est_loss_hist.detach().cpu().numpy(),
         "iter_time": iter_time.detach().cpu().numpy(),
         "cum_time": cum_time.detach().cpu().numpy(),
         "final_err": final_err,
@@ -351,8 +404,9 @@ def run_method_set(
             verbose=verbose,
         )
         results.append(method_result)
-        if "LGHAM" not in method_name.upper() and method_result["status"] == "ok" and method_result["rmse_hist"].size:
-            candidate_error = float(method_result["rmse_hist"][-1] ** 2)
+        loss_curve = method_result.get("est_loss_hist", np.array([]))
+        if "LGHAM" not in method_name.upper() and method_result["status"] == "ok" and loss_curve.size:
+            candidate_error = float(loss_curve[-1])
             if np.isfinite(candidate_error) and candidate_error < best_error_so_far:
                 best_error_so_far = candidate_error
     return results

@@ -1,6 +1,6 @@
 {
   "mode": "EXAMPLE",
-  "seed": 42,
+  "seed": 43,
   "N_MC": 30,
   "make_local_plots": true,
   "python_optim_config": "optim_configs.json",
@@ -24,7 +24,7 @@
     "theta_true": [0.42, 0.31, -0.56, 0.62, 0.12, -0.28]
   },
   "settings": {
-    "lambda_g": 2000,
+    "lambda_g": 10000,
     "K_max": 300,
     "conv_threshold": 1e-8,
     "sigma_nu": 0.10,

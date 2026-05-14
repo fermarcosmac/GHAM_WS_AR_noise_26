@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 
-from wiener_system import extract_loss_derivatives, params_to_loss, project_stable_theta
+from wiener_system import extract_loss_derivatives, fsm_kwargs_from_config, params_to_loss, project_stable_theta
 
 
 def _build_step_scale_vector(
@@ -95,7 +95,15 @@ def method_parameter_update(
         return _finalize_update(theta_new, theta_hat, aux_state, method_cfg, dims)
 
     derivative_order = int(method_cfg.get("derivative_order", 1))
-    aux_state["derivatives"] = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=min(derivative_order, 3))
+    aux_state["derivatives"] = extract_loss_derivatives(
+        theta_hat,
+        r,
+        nu,
+        c,
+        dims,
+        max_order=min(derivative_order, 3),
+        **fsm_kwargs_from_config(method_cfg),
+    )
     aux_state["status"] = "not_implemented"
     aux_state["message"] = (
         f"{method_name} placeholder selected. "
@@ -117,7 +125,7 @@ def ws_ggi_update(
     step_size = float(method_cfg.get("step_size", method_cfg.get("step_scale", 1.0)))
 
     theta_param = torch.nn.Parameter(theta_hat.detach().clone())
-    loss = params_to_loss(theta_param, r, nu, c, dims) # forward_pass and basis for higher-order jacobians
+    loss = params_to_loss(theta_param, r, nu, c, dims, **fsm_kwargs_from_config(method_cfg))
     loss.backward()
     gradient = theta_param.grad.detach().clone()
     step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
@@ -142,7 +150,7 @@ def ws_gni_update(
     eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
     lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
 
-    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2, **fsm_kwargs_from_config(method_cfg))
     gradient = derivatives["grad"]
     hessian = derivatives["hess"]
 
@@ -176,7 +184,7 @@ def ws_ggham_1_dh_update(
     eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
     lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
 
-    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2, **fsm_kwargs_from_config(method_cfg))
     gradient = derivatives["grad"]
     hessian = derivatives["hess"]
 
@@ -207,7 +215,7 @@ def ws_ggham_2_i_update(
     eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
     lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
 
-    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2, **fsm_kwargs_from_config(method_cfg))
     gradient = derivatives["grad"]
     hessian = derivatives["hess"]
 
@@ -234,7 +242,7 @@ def ws_ggham_2_dh_update(
     eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
     lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
 
-    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2, **fsm_kwargs_from_config(method_cfg))
     gradient = derivatives["grad"]
     hessian = derivatives["hess"]
 
@@ -266,7 +274,7 @@ def ws_ggham_2_h_update(
     eta = float(method_cfg.get("eta", method_cfg.get("step_size", 1.0)))
     lambda_reg = float(method_cfg.get("hessian_regularization", 0.0))
 
-    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2, **fsm_kwargs_from_config(method_cfg))
     gradient = derivatives["grad"]
     hessian = derivatives["hess"]
 
@@ -344,7 +352,7 @@ def ws_lgham_update(
     eta = float(method_cfg.get("eta", 0.05))
     eps0 = _get_eps0(method_cfg, default=0.0)
 
-    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2)
+    derivatives = extract_loss_derivatives(theta_hat, r, nu, c, dims, max_order=2, **fsm_kwargs_from_config(method_cfg))
     loss = derivatives["loss"]
     gradient = derivatives["grad"]
     hessian = derivatives["hess"]

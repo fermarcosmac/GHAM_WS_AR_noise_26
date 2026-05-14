@@ -3,6 +3,7 @@
     "WS_GGI": {
       "step_size": 0.03,
       "d_step_multiplier": 100.0,
+      "d_regularization_weight": 0.0,
       "initialization": {
         "mode": "physical",
         "linear_init_a": [0.0, 0.0],
@@ -34,7 +35,7 @@
         "e_init_mode": "output_residual",
         "theta_init": 1e-6
       },
-      "notes": "Newton-style update using autodiff gradient and Hessian of params_to_loss."
+      "notes": "Newton-style update using autodiff gradient and Hessian of the non-oracle FSM prediction-error loss."
     },
     "WS_GGHAM_1_dH": {
       "eta": 3.0,
@@ -43,7 +44,7 @@
       "derivative_order": 2,
       "stability_projection": true,
       "stability_radius": 0.98,
-      "notes": "First-order gradient-root GHAM update using autodiff gradient and diagonal Hessian approximation from params_to_loss. Tuned on lambda_g=2000, sigma_nu=0.1."
+      "notes": "First-order gradient-root GHAM update using autodiff gradient and diagonal Hessian approximation from the non-oracle FSM prediction-error loss. Tuned on lambda_g=2000, sigma_nu=0.1."
     },
     "WS_GGHAM_2_I": {
       "eta": 0.01,
@@ -51,7 +52,7 @@
       "derivative_order": 2,
       "stability_projection": true,
       "stability_radius": 0.98,
-      "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with identity linear operator."
+      "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with identity linear operator on the non-oracle FSM prediction-error loss."
     },
     "WS_GGHAM_2_dH": {
       "eta": 1.0,
@@ -60,14 +61,14 @@
       "derivative_order": 2,
       "stability_projection": true,
       "stability_radius": 0.98,
-      "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with diagonal-Hessian linear operator."
+      "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with diagonal-Hessian linear operator on the non-oracle FSM prediction-error loss."
     },
     "WS_GGHAM_2_H": {
       "eta": 1.0,
       "hessian_regularization": 100.0,
       "d_step_multiplier": 100.0,
       "derivative_order": 2,
-      "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with Hessian linear operator."
+      "notes": "Second-order gradient-root GHAM update using autodiff gradient and Hessian with Hessian linear operator on the non-oracle FSM prediction-error loss."
     },
     "WS_LGHAM_1_TIK": {
       "eps_0": "automatic",
