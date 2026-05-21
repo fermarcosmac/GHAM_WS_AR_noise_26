@@ -8,8 +8,8 @@ clear; clc; close all;
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
-experiment_name = 'example_CSTR';
-mode = 'EXAMPLE';  % EXAMPLE or MONTECARLO
+experiment_name = 'example_1';
+mode = 'MONTECARLO';  % EXAMPLE or MONTECARLO
 data_files = { ...
     fullfile(repo_root, 'results', experiment_name, sprintf('comparison_fsm_%s.mat', lower(mode))), ...
     fullfile(repo_root, 'results', experiment_name, sprintf('comparison_pl_%s.mat', lower(mode))) ...
@@ -767,8 +767,10 @@ if nargin < 2
 end
 label = char_value(method_name);
 label = strrep(label, 'RGLS', 'RLS');
-label = strrep(label, 'GGHAM', 'GHAM');
-label = strrep(label, 'LGHAM', 'LHAM');
+label = strrep(label, 'GGHAM', 'GGOTHAM');
+label = strrep(label, 'LGHAM', 'LGOTHAM');
+label = strrep(label, 'LHAM', 'LGOTHAM');
+label = strrep(label, 'GHAM', 'GGOTHAM');
 if contains(label, 'HAM')
     label = regexprep(label, '^WS-', '');
 end
