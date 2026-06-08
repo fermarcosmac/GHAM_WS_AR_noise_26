@@ -453,7 +453,7 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
 
 
 def main() -> None:
-    experiment_name = "example_1"
+    experiment_name = "example_CSTR"
 
     device = default_device()
     dtype = choose_dtype()
