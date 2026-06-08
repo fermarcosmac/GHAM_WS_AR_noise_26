@@ -8,7 +8,7 @@ clear; clc; close all;
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
-experiment_name = 'example_1';
+experiment_name = 'example_CSTR';
 mode = 'MONTECARLO';  % EXAMPLE or MONTECARLO
 data_files = { ...
     fullfile(repo_root, 'results', experiment_name, sprintf('comparison_fsm_%s.mat', lower(mode))), ...
@@ -47,7 +47,7 @@ end
 
 print_wiener_parameters(datasets);
 validate_common_wiener_system(datasets);
-print_result_tables(datasets);
+print_result_tables(datasets, mode);
 
 method_names = collect_method_names(datasets);
 colors = build_distinct_colors(max(numel(method_names), 1));
@@ -253,25 +253,176 @@ for i = 1:numel(datasets)
 end
 end
 
-function print_result_tables(datasets)
+function print_result_tables(datasets, mode)
+if nargin < 2
+    mode = '';
+end
+
 for i = 1:numel(datasets)
+    if strcmpi(char_value(mode), 'MONTECARLO') && isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
+        print_montecarlo_result_table(datasets(i));
+    else
+        print_example_result_table(datasets(i));
+    end
+end
+end
+
+function print_example_result_table(dataset)
     fprintf('\n%s\n', repmat('=', 1, 108));
-    fprintf('FINAL METHOD SUMMARY (%s parametrization)\n', datasets(i).parametrization);
+    fprintf('FINAL METHOD SUMMARY (%s parametrization)\n', dataset.parametrization);
     fprintf('%s\n', repmat('=', 1, 108));
     fprintf('%-18s %-12s %-14s %-14s %-12s %-12s\n', ...
         'Method', 'Status', 'Param err(%)', 'Output RMSE', 'Final d1', 'CPU time (s)');
     fprintf('%s\n', repmat('-', 1, 108));
 
-    for m = 1:numel(datasets(i).results)
-        result = datasets(i).results(m);
+    for m = 1:numel(dataset.results)
+        result = dataset.results(m);
         theta_hat = double(result.theta_hat(:));
         final_d = NaN;
         if ~isempty(theta_hat)
             final_d = theta_hat(end);
         end
         fprintf('%-18s %-12s %-14.5f %-14.5f %-12.5f %-12.5f\n', ...
-            display_method_label(result_name(result), datasets(i).parametrization), char_value(result.status), ...
+            display_method_label(result_name(result), dataset.parametrization), char_value(result.status), ...
             scalar_value(result.final_err), final_output_rmse(result), final_d, scalar_value(result.total_time));
+    end
+end
+
+function print_montecarlo_result_table(dataset)
+summary = dataset.mc_summary;
+method_names = cellstr_value(summary.method_names);
+n_methods = numel(method_names);
+
+param_err_runs = orient_method_run_matrix(double(summary.final_errors), n_methods);
+rmse_runs = final_values_from_mc_runs(summary.rmse_runs, n_methods);
+[cpu_time_runs, cpu_source] = montecarlo_cpu_time_runs(summary, n_methods);
+
+fprintf('\n%s\n', repmat('=', 1, 136));
+fprintf('MONTE CARLO METHOD SUMMARY (%s parametrization)\n', dataset.parametrization);
+fprintf('%s\n', repmat('=', 1, 136));
+fprintf('%-22s %-12s %-6s %-14s %-14s %-14s %-14s %-14s %-14s\n', ...
+    'Method', 'Status', 'N', 'Param mean', 'Param std', 'RMSE mean', 'RMSE std', 'CPU mean (s)', 'CPU std (s)');
+fprintf('%s\n', repmat('-', 1, 136));
+
+for m = 1:n_methods
+    [param_mean, param_std, n_param] = mean_std_count(param_err_runs(m, :));
+    [rmse_mean, rmse_std, n_rmse] = mean_std_count(rmse_runs(m, :));
+    if isempty(cpu_time_runs)
+        cpu_mean = NaN;
+        cpu_std = NaN;
+        n_cpu = 0;
+    else
+        [cpu_mean, cpu_std, n_cpu] = mean_std_count(cpu_time_runs(m, :));
+    end
+
+    n_runs = max([n_param, n_rmse, n_cpu]);
+    fprintf('%-22s %-12s %-6d %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f\n', ...
+        display_method_label(method_names{m}, dataset.parametrization), ...
+        result_status_for_method(dataset, method_names{m}), n_runs, ...
+        param_mean, param_std, rmse_mean, rmse_std, cpu_mean, cpu_std);
+end
+
+if isempty(cpu_time_runs)
+    fprintf(['\nNOTE: This saved Monte Carlo summary does not contain per-run CPU timing, ', ...
+        'so CPU mean/std cannot be computed from this file.\n']);
+elseif ~isempty(cpu_source)
+    fprintf('\nCPU timing statistics computed from mc_summary.%s.\n', cpu_source);
+end
+end
+
+function matrix = orient_method_run_matrix(values, n_methods)
+values = double(values);
+if isempty(values)
+    matrix = NaN(n_methods, 0);
+    return;
+end
+
+if isvector(values)
+    if n_methods == 1
+        matrix = values(:).';
+    elseif numel(values) == n_methods
+        matrix = values(:);
+    else
+        matrix = reshape(values, n_methods, []);
+    end
+elseif size(values, 1) == n_methods
+    matrix = values;
+elseif size(values, 2) == n_methods
+    matrix = values.';
+else
+    matrix = reshape(values, n_methods, []);
+end
+end
+
+function final_values = final_values_from_mc_runs(runs, n_methods)
+runs = double(runs);
+if isempty(runs)
+    final_values = NaN(n_methods, 0);
+    return;
+end
+
+if ndims(runs) < 3
+    final_values = orient_method_run_matrix(runs, n_methods);
+    return;
+end
+
+if size(runs, 1) ~= n_methods && size(runs, 2) == n_methods
+    runs = permute(runs, [2 1 3]);
+end
+
+n_runs = size(runs, 2);
+final_values = NaN(n_methods, n_runs);
+for m = 1:n_methods
+    for r = 1:n_runs
+        curve = squeeze(runs(m, r, :));
+        curve = curve(isfinite(curve));
+        if ~isempty(curve)
+            final_values(m, r) = curve(end);
+        end
+    end
+end
+end
+
+function [cpu_time_runs, source_field] = montecarlo_cpu_time_runs(summary, n_methods)
+source_field = '';
+candidate_fields = {'total_time_runs', 'cpu_time_runs', 'cpu_times', 'total_times'};
+for i = 1:numel(candidate_fields)
+    field_name = candidate_fields{i};
+    if isfield(summary, field_name)
+        cpu_time_runs = orient_method_run_matrix(summary.(field_name), n_methods);
+        source_field = field_name;
+        return;
+    end
+end
+
+if isfield(summary, 'cum_time_runs')
+    cpu_time_runs = final_values_from_mc_runs(summary.cum_time_runs, n_methods);
+    source_field = 'cum_time_runs';
+else
+    cpu_time_runs = [];
+end
+end
+
+function [mu, sigma, n] = mean_std_count(values)
+values = double(values(:));
+values = values(isfinite(values));
+n = numel(values);
+if n == 0
+    mu = NaN;
+    sigma = NaN;
+    return;
+end
+
+mu = mean(values);
+sigma = std(values, 0);
+end
+
+function status = result_status_for_method(dataset, method_name)
+status = 'missing';
+for i = 1:numel(dataset.results)
+    if strcmp(result_name(dataset.results(i)), method_name)
+        status = char_value(dataset.results(i).status);
+        return;
     end
 end
 end

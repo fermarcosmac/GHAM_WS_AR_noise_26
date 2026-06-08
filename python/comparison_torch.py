@@ -422,6 +422,7 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
     final_param_errors = np.full((n_methods, n_mc, n_params), np.nan)
     final_param_estimates = np.full((n_methods, n_mc, n_params), np.nan)
     final_errors = np.full((n_methods, n_mc), np.nan)
+    total_time_runs = np.full((n_methods, n_mc), np.nan)
 
     for run_idx, run_results in enumerate(mc_runs):
         by_name = {result["name"]: result for result in run_results}
@@ -430,6 +431,7 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
             param_err_runs[method_idx, run_idx, :] = pad_vector(result["param_err"], K_max)
             rmse_runs[method_idx, run_idx, :] = pad_vector(result["rmse_hist"], K_max)
             final_errors[method_idx, run_idx] = result["final_err"]
+            total_time_runs[method_idx, run_idx] = result["total_time"]
             if result["theta_hat"].size:
                 theta_hat = np.asarray(result["theta_hat"], dtype=float).reshape(-1)
                 final_param_estimates[method_idx, run_idx, :] = theta_hat
@@ -446,11 +448,12 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
         "final_param_errors": final_param_errors,
         "final_param_estimates": final_param_estimates,
         "final_errors": final_errors,
+        "total_time_runs": total_time_runs,
     }
 
 
 def main() -> None:
-    experiment_name = "example_CSTR"
+    experiment_name = "example_1"
 
     device = default_device()
     dtype = choose_dtype()

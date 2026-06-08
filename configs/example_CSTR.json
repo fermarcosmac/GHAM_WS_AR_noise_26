@@ -1,5 +1,5 @@
 {
-  "mode": "EXAMPLE",
+  "mode": "MONTECARLO",
   "seed": 43,
   "N_MC": 30,
   "make_local_plots": true,

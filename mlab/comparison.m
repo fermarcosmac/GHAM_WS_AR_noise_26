@@ -176,6 +176,7 @@ rmse_runs = NaN(n_methods, N_MC, K_max);
 final_param_errors = NaN(n_methods, N_MC, n_params);
 final_param_estimates = NaN(n_methods, N_MC, n_params);
 final_errors = NaN(n_methods, N_MC);
+total_time_runs = NaN(n_methods, N_MC);
 
 for mc = 1:N_MC
     run_results = mc_runs{mc};
@@ -188,6 +189,7 @@ for mc = 1:N_MC
         param_err_runs(m, mc, :) = pad_curve(result.param_err, K_max);
         rmse_runs(m, mc, :) = pad_curve(result.RMSE_hist, K_max);
         final_errors(m, mc) = result.final_err;
+        total_time_runs(m, mc) = result.total_time;
         if ~isempty(result.theta_hat)
             theta_hat = result.theta_hat(:);
             final_param_estimates(m, mc, :) = theta_hat;
@@ -206,7 +208,8 @@ summary = struct( ...
     'rmse_stderr', squeeze(std(rmse_runs, 0, 2, 'omitnan')) ./ sqrt(max(N_MC, 1)), ...
     'final_param_errors', final_param_errors, ...
     'final_param_estimates', final_param_estimates, ...
-    'final_errors', final_errors);
+    'final_errors', final_errors, ...
+    'total_time_runs', total_time_runs);
 end
 
 function y = pad_curve(x, target_len)
