@@ -443,6 +443,18 @@ def initialize_method_state(
     theta_hat = torch.full((n,), 1e-6, dtype=dtype, device=device)
 
     init_cfg = method_cfg.get("initialization")
+    if init_cfg and init_cfg.get("policy", "legacy") == "consistent":
+        theta_hat = torch.as_tensor(init_cfg["theta0"], dtype=dtype, device=device).reshape(-1)
+        if theta_hat.numel() != n or not torch.all(torch.isfinite(theta_hat)):
+            raise ValueError(f"initialization.theta0 must contain {n} finite parameters")
+        for denominator in (split_theta(theta_hat, dims)[0], split_theta(theta_hat, dims)[3]):
+            if denominator.numel() and np.any(np.abs(np.roots(np.r_[1., denominator.cpu().numpy()])) >= 1):
+                raise ValueError("initialization.theta0 must have stable signal and noise denominators")
+        alpha_hat, beta_hat = simulate_signal_path_fsm(r, theta_hat, dims, **fsm_kwargs_from_config(method_cfg))
+        e_hat = c - beta_hat
+        return {"alpha_hat": alpha_hat.detach(), "e_hat": e_hat.detach(), "theta_hat": theta_hat.clone()}
+    if init_cfg and init_cfg.get("policy", "legacy") != "legacy":
+        raise ValueError("initialization.policy must be 'legacy' or 'consistent'")
     if init_cfg is None:
         return {"alpha_hat": alpha_hat, "e_hat": e_hat, "theta_hat": theta_hat}
 

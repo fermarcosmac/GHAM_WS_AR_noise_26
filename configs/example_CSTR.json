@@ -1,6 +1,8 @@
 {
   "mode": "MONTECARLO",
   "seed": 43,
+  "stopping": {"gradient_tolerance": 1e-6, "loss_tolerance": 1e-8},
+  "diagnostics": {"enabled": true, "save_matrices": false},
   "N_MC": 30,
   "make_local_plots": true,
   "python_optim_config": "optim_configs.json",

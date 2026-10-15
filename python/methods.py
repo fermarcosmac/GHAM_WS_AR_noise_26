@@ -28,13 +28,22 @@ def _finalize_update(
     method_cfg: dict[str, Any],
     dims,
 ) -> tuple[torch.Tensor, dict[str, Any]]:
+    aux_state["proposed_step_norm"] = float(torch.linalg.vector_norm(theta_new - theta_previous))
+    aux_state["projected"] = False
+    aux_state["rejected"] = False
     if not torch.all(torch.isfinite(theta_new)):
+        aux_state["status"] = "invalid_update"
+        aux_state["rejected"] = True
+        aux_state["applied_step_norm"] = 0.
         aux_state["message"] = "Rejected non-finite update; kept previous parameters."
         return theta_previous.detach().clone(), aux_state
 
     if method_cfg.get("stability_projection", True):
         radius = float(method_cfg.get("stability_radius", 0.98))
-        theta_new = project_stable_theta(theta_new, dims, radius=radius)
+        projected = project_stable_theta(theta_new, dims, radius=radius)
+        aux_state["projected"] = not torch.equal(projected, theta_new)
+        theta_new = projected
+    aux_state["applied_step_norm"] = float(torch.linalg.vector_norm(theta_new - theta_previous))
     return theta_new, aux_state
 
 
@@ -162,7 +171,9 @@ def ws_gni_update(
 
     try:
         direction = torch.linalg.solve(hessian_reg, gradient.unsqueeze(-1)).squeeze(-1)
+        derivatives["solver_fallback"] = torch.tensor(0.)
     except RuntimeError:
+        derivatives["solver_fallback"] = torch.tensor(1.)
         direction = torch.linalg.lstsq(hessian_reg, gradient.unsqueeze(-1)).solution.squeeze(-1)
 
     step_scale = _build_step_scale_vector(method_cfg, dims, dtype=theta_hat.dtype, device=theta_hat.device)
@@ -282,13 +293,16 @@ def ws_ggham_2_h_update(
 
     try:
         theta_1 = -eta * torch.linalg.solve(hessian_reg, gradient.unsqueeze(-1)).squeeze(-1)
+        derivatives["solver_fallback"] = torch.tensor(0.)
     except RuntimeError:
+        derivatives["solver_fallback"] = torch.tensor(1.)
         theta_1 = -eta * torch.linalg.lstsq(hessian_reg, gradient.unsqueeze(-1)).solution.squeeze(-1)
 
     h_theta_1 = hessian @ theta_1
     try:
         correction = torch.linalg.solve(hessian_reg, h_theta_1.unsqueeze(-1)).squeeze(-1)
     except RuntimeError:
+        derivatives["solver_fallback"] = torch.tensor(1.)
         correction = torch.linalg.lstsq(hessian_reg, h_theta_1.unsqueeze(-1)).solution.squeeze(-1)
 
     # NOTE: if hessian is "nice" (i.e. invertible and well-conditioned), this should be just theta_1
@@ -358,6 +372,7 @@ def ws_lgham_update(
     hessian = derivatives["hess"]
 
     # Gradient-root convention matches the linearized MATLAB formulas.
+    derivatives["inverse_denominator"] = torch.dot(gradient, gradient) + (float(method_cfg.get("tikhonov_lambda", 0.0)) if method_cfg.get("inverse_solver", "tikhonov") == "tikhonov" else 0.)
     rhs1 = loss - eps0
     theta_1 = - eta * _solve_loss_root_inverse(gradient, rhs1, method_cfg)
     delta = theta_1.clone()

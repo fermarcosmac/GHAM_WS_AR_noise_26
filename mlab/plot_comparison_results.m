@@ -1,10 +1,12 @@
+function datasets = plot_comparison_results(options)
+% Optional data_files/fig_dir/export_figures/diagnostics_only overrides.
 %% Plot saved Wiener identification comparison results.
 %
 % Run python/comparison_torch.py and mlab/comparison.m first to generate:
 %   results/comparison_fsm.mat
 %   results/comparison_pl.mat
 
-clear; clc; close all;
+if nargin < 1, options = struct(); end
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
@@ -16,6 +18,10 @@ data_files = { ...
 };
 export_figures = true;
 fig_dir = fullfile(repo_root, 'figs');
+if isfield(options,'data_files'), data_files = options.data_files; end
+if isfield(options,'fig_dir'), fig_dir = options.fig_dir; end
+if isfield(options,'export_figures'), export_figures = options.export_figures; end
+diagnostics_only = isfield(options,'diagnostics_only') && options.diagnostics_only;
 
 set(groot, ...
     'defaultTextInterpreter', 'latex', ...
@@ -56,6 +62,11 @@ mode_tag = lower(sanitize_filename(mode));
 
 for i = 1:numel(datasets)
     parametrization_tag = lower(sanitize_filename(datasets(i).parametrization));
+    if isfield(datasets(i).experiment,'name'), experiment_tag = lower(sanitize_filename(char_value(datasets(i).experiment.name))); end
+    if isfield(datasets(i).experiment,'mode'), mode_tag = lower(sanitize_filename(char_value(datasets(i).experiment.mode))); end
+    prefix = sprintf('%s_%s_%s',experiment_tag,mode_tag,parametrization_tag);
+    plot_optimization_diagnostics(datasets(i),fig_dir,prefix,export_figures,method_names,colors);
+    if diagnostics_only, continue; end
 
     fig_metrics = plot_metric_summary(datasets(i), method_names, colors);
     metrics_filename = sprintf('comparison_metrics_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
@@ -87,12 +98,16 @@ end
 fprintf('\nDone. MATLAB figures rendered from saved comparison data.\n');
 
 
+end
+
 function ds = normalize_loaded_dataset(loaded, file_name)
 ds = struct();
 ds.file = file_name;
 ds.parametrization = char_value(loaded.parametrization);
 ds.generated_at = char_value(loaded.generated_at);
 ds.experiment = loaded.experiment;
+ds.all_runs = {};
+if isfield(loaded,'all_runs'), ds.all_runs = loaded.all_runs; end
 if isfield(loaded, 'example_data')
     ds.example_data = loaded.example_data;
 else
@@ -301,7 +316,7 @@ fprintf('\n%s\n', repmat('=', 1, 136));
 fprintf('MONTE CARLO METHOD SUMMARY (%s parametrization)\n', dataset.parametrization);
 fprintf('%s\n', repmat('=', 1, 136));
 fprintf('%-22s %-12s %-6s %-14s %-14s %-14s %-14s %-14s %-14s\n', ...
-    'Method', 'Status', 'N', 'Param mean', 'Param std', 'RMSE mean', 'RMSE std', 'CPU mean (s)', 'CPU std (s)');
+    'Method', 'Status', 'N valid', 'Param mean', 'Param std', 'RMSE mean', 'RMSE std', 'CPU mean (s)', 'CPU std (s)');
 fprintf('%s\n', repmat('-', 1, 136));
 
 for m = 1:n_methods
@@ -310,12 +325,11 @@ for m = 1:n_methods
     if isempty(cpu_time_runs)
         cpu_mean = NaN;
         cpu_std = NaN;
-        n_cpu = 0;
     else
-        [cpu_mean, cpu_std, n_cpu] = mean_std_count(cpu_time_runs(m, :));
+        [cpu_mean, cpu_std] = mean_std_count(cpu_time_runs(m, :));
     end
 
-    n_runs = max([n_param, n_rmse, n_cpu]);
+    n_runs = min(n_param, n_rmse);
     fprintf('%-22s %-12s %-6d %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f\n', ...
         display_method_label(method_names{m}, dataset.parametrization), ...
         result_status_for_method(dataset, method_names{m}), n_runs, ...
@@ -326,7 +340,7 @@ if isempty(cpu_time_runs)
     fprintf(['\nNOTE: This saved Monte Carlo summary does not contain per-run CPU timing, ', ...
         'so CPU mean/std cannot be computed from this file.\n']);
 elseif ~isempty(cpu_source)
-    fprintf('\nCPU timing statistics computed from mc_summary.%s.\n', cpu_source);
+    fprintf('\nTiming statistics include all recorded attempts from mc_summary.%s; N valid counts finite performance results.\n', cpu_source);
 end
 end
 
@@ -419,6 +433,17 @@ end
 
 function status = result_status_for_method(dataset, method_name)
 status = 'missing';
+if ~isempty(dataset.mc_summary) && isfield(dataset.mc_summary,'statuses')
+    names = cellstr_value(dataset.mc_summary.method_names);
+    idx = find(strcmp(names,method_name),1);
+    if ~isempty(idx)
+        values = string(dataset.mc_summary.statuses(idx,:));
+        types = unique(values);
+        parts = arrayfun(@(t)sprintf('%s:%d',t,sum(values==t)),types,'UniformOutput',false);
+        status = strjoin(parts,',');
+    end
+    return;
+end
 for i = 1:numel(dataset.results)
     if strcmp(result_name(dataset.results(i)), method_name)
         status = char_value(dataset.results(i).status);
@@ -690,7 +715,7 @@ linkaxes(axes_list, 'x');
 end
 
 function tf = is_ok_result(result)
-tf = strcmpi(strtrim(char_value(result.status)), 'ok');
+tf = ismember(lower(strtrim(char_value(result.status))), {'ok','converged','stalled','max_iterations'});
 end
 
 function tf = is_plotted_result(result)
@@ -699,6 +724,13 @@ end
 
 function tf = is_plottable_method(dataset, method_name)
 tf = false;
+if ~isempty(dataset.mc_summary) && isfield(dataset.mc_summary,'final_errors')
+    names = cellstr_value(dataset.mc_summary.method_names);
+    idx = find(strcmp(names,method_name),1);
+    errors = orient_method_run_matrix(dataset.mc_summary.final_errors,numel(names));
+    if ~isempty(idx), tf = any(isfinite(errors(idx,:))); end
+    return;
+end
 for i = 1:numel(dataset.results)
     if strcmp(result_name(dataset.results(i)), method_name)
         tf = is_plotted_result(dataset.results(i));

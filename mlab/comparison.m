@@ -1,3 +1,5 @@
+function payload = comparison(experiment_cfg, options)
+% Optional config/options allow small runs without changing the published settings.
 %% Wiener System Identification - Method Comparison Harness
 %
 % This script compares multiple identification methods on the Wiener system
@@ -5,13 +7,16 @@
 % optim_configs.json so new methods can be added without changing the main
 % experiment loop.
 
-clear; clc; close all;
+if nargin < 2, options = struct(); end
 script_dir = fileparts(mfilename('fullpath'));
 
 %% 0. Experiment configuration
 experiment_name = 'example_CSTR';
 repo_root = fullfile(script_dir, '..');
-experiment_cfg = load_experiment_config(repo_root, experiment_name);
+if nargin < 1 || isempty(experiment_cfg)
+    experiment_cfg = load_experiment_config(repo_root, experiment_name);
+end
+experiment_name = get_optional_field(options, 'experiment_name', experiment_name);
 mode = upper(char(get_optional_field(experiment_cfg, 'mode', 'EXAMPLE')));
 seed = get_optional_field(experiment_cfg, 'seed', 42);
 N_MC = get_optional_field(experiment_cfg, 'N_MC', 1);
@@ -19,6 +24,8 @@ config_file = fullfile(script_dir, get_optional_field(experiment_cfg, 'matlab_op
 make_local_plots = get_optional_field(experiment_cfg, 'make_local_plots', strcmp(mode, 'EXAMPLE'));
 results_dir = fullfile(repo_root, 'results', experiment_name);
 results_file = fullfile(results_dir, sprintf('comparison_pl_%s.mat', lower(mode)));
+results_file = get_optional_field(options, 'output_file', results_file);
+make_local_plots = get_optional_field(options, 'make_local_plots', make_local_plots);
 selected_methods = cellstr_value(experiment_cfg.selected_methods);
 
 %% 1. True system parameters
@@ -48,12 +55,15 @@ rng(seed);
 
 %% 4. Load optimization configs
 method_configs = load_method_configs(config_file);
+method_configs = get_optional_field(options, 'method_configs', method_configs);
 
 %% 5. Run selected methods
 results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, ...
-    na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, true);
+    na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, true, experiment_cfg, ...
+    struct('data_seed', seed, 'mc_index', 1, 'experiment_name', experiment_name));
 
 mc_summary = [];
+mc_runs = {results};
 if strcmp(mode, 'MONTECARLO')
     mc_runs = cell(N_MC, 1);
     mc_runs{1} = results;
@@ -63,7 +73,8 @@ if strcmp(mode, 'MONTECARLO')
         rng(run_seed);
         [r_mc, nu_mc, c_mc] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
         mc_runs{mc} = run_method_set(selected_methods, method_configs, r_mc, nu_mc, c_mc, theta_true, ...
-            na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, false);
+            na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, false, experiment_cfg, ...
+            struct('data_seed', run_seed, 'mc_index', mc, 'experiment_name', experiment_name));
     end
     mc_summary = summarize_montecarlo(mc_runs, selected_methods, theta_true, K_max);
 end
@@ -86,10 +97,10 @@ for m = 1:numel(results)
 end
 
 %% 7. Plots
-save_comparison_results(results_file, results, selected_methods, ...
+payload = save_comparison_results(results_file, results, selected_methods, ...
     na, nb, nf, nd, theta_true, param_names, param_labels, ...
     lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, ...
-    experiment_name, mode, seed, N_MC, struct('r', r, 'nu', nu, 'c', c), mc_summary);
+    experiment_name, mode, seed, N_MC, struct('r', r, 'nu', nu, 'c', c), mc_summary, mc_runs, experiment_cfg);
 
 if make_local_plots
     plot_method_metrics(results);
@@ -100,60 +111,43 @@ else
 end
 
 
+end
+
 %% Local functions
-function results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, verbose)
+function results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, verbose, experiment_cfg, metadata)
 results = [];
 best_error_so_far = Inf;
 for m = 1:numel(selected_methods)
-    method_name = selected_methods{m};
-    if verbose
-        fprintf('\n%s\n', repmat('=', 1, 72));
-        fprintf('Running method: %s\n', method_name);
-        fprintf('%s\n', repmat('=', 1, 72));
-    end
-
-    if ~has_method_config(method_configs, method_name)
-        status_msg = sprintf('No PL optimizer config entry found for method "%s". Skipping.', method_name);
-        if verbose
-            fprintf('  %s\n', status_msg);
+    name = selected_methods{m};
+    cfg = struct();
+    if has_method_config(method_configs, name), cfg = get_method_config(method_configs, name); end
+    if isfield(experiment_cfg, 'initialization'), cfg.initialization = experiment_cfg.initialization; end
+    cfg.initialization = get_optional_field(cfg, 'initialization', struct());
+    cfg.initialization.policy = get_optional_field(cfg.initialization, 'policy', 'legacy');
+    defaults = struct('stopping', struct('gradient_tolerance',1e-6,'loss_tolerance',1e-8), ...
+        'diagnostics', struct('enabled',true,'save_matrices',false));
+    for section = {'stopping', 'diagnostics'}
+        key = section{1};
+        merged = defaults.(key);
+        for source = {get_optional_field(cfg,key,struct()), get_optional_field(experiment_cfg,key,struct())}
+            fields = fieldnames(source{1});
+            for j = 1:numel(fields), merged.(fields{j}) = source{1}.(fields{j}); end
         end
-        method_result = make_skipped_result(method_name, status_msg, n_params_from_dims(na, nb, nf, nd), best_error_so_far);
-    else
-        method_cfg = get_method_config(method_configs, method_name);
-        method_result = run_identification_method( ...
-            method_name, method_cfg, r, nu, c, theta_true, ...
-            na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose);
+        cfg.(key) = merged;
     end
-
-    best_error_so_far = method_result.best_error_so_far;
-    if isempty(results)
-        results = method_result;
-    else
-        results(end + 1) = method_result;
+    cfg.na = na; cfg.nb = nb; cfg.nf = nf; cfg.nd = nd;
+    cfg.run_settings = struct('K_max',K_max,'conv_threshold',conv_threshold, ...
+        'enforce_fixed_iterations',enforce_fixed_iterations);
+    if contains(name,'LGHAM')
+        cfg.best_error_so_far = best_error_so_far;
+        if ~isfinite(best_error_so_far), cfg.best_error_so_far = 0; end
+        cfg.resolved_epsilon0 = get_eps0(cfg);
     end
+    result = run_identification_method(name, cfg, r, nu, c, theta_true, ...
+        na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose, metadata);
+    best_error_so_far = result.best_error_so_far;
+    if isempty(results), results = result; else, results(end+1) = result; end %#ok<AGROW>
 end
-end
-
-function n = n_params_from_dims(na, nb, nf, nd)
-n = na + nb + (nf - 1) + nd;
-end
-
-function result = make_skipped_result(method_name, status_msg, n, best_error_so_far)
-result = struct( ...
-    'name', method_name, ...
-    'status', 'skipped', ...
-    'status_msg', status_msg, ...
-    'theta_hat', [], ...
-    'theta_hist', zeros(n, 0), ...
-    'param_err', zeros(0, 1), ...
-    'rel_change', zeros(0, 1), ...
-    'RMSE_hist', zeros(0, 1), ...
-    'iter_time', zeros(0, 1), ...
-    'cum_time', zeros(0, 1), ...
-    'final_err', NaN, ...
-    'total_time', 0, ...
-    'iterations', 0, ...
-    'best_error_so_far', best_error_so_far);
 end
 
 function [r, nu, c] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu)
@@ -177,6 +171,7 @@ final_param_errors = NaN(n_methods, N_MC, n_params);
 final_param_estimates = NaN(n_methods, N_MC, n_params);
 final_errors = NaN(n_methods, N_MC);
 total_time_runs = NaN(n_methods, N_MC);
+statuses = cell(n_methods,N_MC); run_ids = cell(n_methods,N_MC);
 
 for mc = 1:N_MC
     run_results = mc_runs{mc};
@@ -186,6 +181,9 @@ for mc = 1:N_MC
             continue;
         end
         result = run_results(idx);
+        statuses{m,mc} = result.status; run_ids{m,mc} = result.run_metadata.run_id;
+        total_time_runs(m,mc) = result.total_time;
+        if ~ismember(result.status,{'converged','stalled','max_iterations'}), continue; end
         param_err_runs(m, mc, :) = pad_curve(result.param_err, K_max);
         rmse_runs(m, mc, :) = pad_curve(result.RMSE_hist, K_max);
         final_errors(m, mc) = result.final_err;
@@ -199,17 +197,22 @@ for mc = 1:N_MC
 end
 
 summary = struct( ...
+    'statuses',{statuses},'run_ids',{run_ids}, ...
     'method_names', {selected_methods}, ...
     'param_err_runs', param_err_runs, ...
-    'param_err_mean', squeeze(mean(param_err_runs, 2, 'omitnan')), ...
-    'param_err_stderr', squeeze(std(param_err_runs, 0, 2, 'omitnan')) ./ sqrt(max(N_MC, 1)), ...
+    'param_err_mean', reshape(mean(param_err_runs,2,'omitnan'),n_methods,K_max), ...
+    'param_err_stderr', reshape(std(param_err_runs,0,2,'omitnan')./sqrt(max(sum(isfinite(param_err_runs),2),1)),n_methods,K_max), ...
     'rmse_runs', rmse_runs, ...
-    'rmse_mean', squeeze(mean(rmse_runs, 2, 'omitnan')), ...
-    'rmse_stderr', squeeze(std(rmse_runs, 0, 2, 'omitnan')) ./ sqrt(max(N_MC, 1)), ...
+    'rmse_mean', reshape(mean(rmse_runs,2,'omitnan'),n_methods,K_max), ...
+    'rmse_stderr', reshape(std(rmse_runs,0,2,'omitnan')./sqrt(max(sum(isfinite(rmse_runs),2),1)),n_methods,K_max), ...
     'final_param_errors', final_param_errors, ...
     'final_param_estimates', final_param_estimates, ...
     'final_errors', final_errors, ...
     'total_time_runs', total_time_runs);
+summary.param_err_count = reshape(sum(isfinite(param_err_runs),2),n_methods,K_max);
+summary.rmse_count = reshape(sum(isfinite(rmse_runs),2),n_methods,K_max);
+summary.param_err_stderr(summary.param_err_count<2) = NaN;
+summary.rmse_stderr(summary.rmse_count<2) = NaN;
 end
 
 function y = pad_curve(x, target_len)
@@ -253,168 +256,214 @@ end
 cells = cells(:).';
 end
 
-function result = run_identification_method(method_name, method_cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose)
-n = na + nb + (nf - 1) + nd;
-
-init_state = initialize_method_state(method_cfg, r, c, na, nb, lambda_g, n);
-if contains(method_name,'LGHAM')
-    method_cfg.best_error_so_far = best_error_so_far;
+function result = run_identification_method(method_name, cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose, metadata)
+assert(K_max >= 1 && conv_threshold >= 0, 'Invalid iteration settings.');
+init = initialize_method_state(cfg, r, c, na, nb, nf, nd, lambda_g, numel(theta_true));
+theta = init.theta_hat;
+alpha = init.alpha_hat; e = init.e_hat;
+theta0 = theta;
+metadata.data_sha256 = hash_values([r(:); c(:)]);
+metadata.initialization_sha256 = hash_values(theta0);
+metadata.backend = 'matlab'; metadata.dtype = class(r); metadata.device = 'cpu';
+metadata.matlab_version = version;
+metadata.dataset_id = metadata.data_sha256;
+resolved_config_json = jsonencode(cfg);
+metadata.config_sha256 = sha256_bytes(unicode2native(resolved_config_json,'UTF-8'));
+metadata.run_id = [metadata.dataset_id ':' method_name ':' metadata.initialization_sha256 ':' metadata.config_sha256];
+status = 'max_iterations'; status_msg = 'Iteration budget exhausted.';
+updates = 0; accepted = 0; stopping_iteration = -1; diagnostic_time = 0;
+rows = {}; snapshots = {};
+t_start = tic;
+Phi = build_state_matrix(alpha,e,r,na,nb,nf,nd);
+theta_hist = theta;
+param_err = norm(theta-theta_true)/norm(theta_true)*100;
+RMSE_hist = sqrt(mean((c-simulate_wiener(r,nu,theta,na,nb,nf,nd,lambda_g)).^2));
+est_loss_hist = 0.5*sum((c-Phi*theta).^2);
+rel_change = 0; iter_time = 0; cum_time = 0; active_mask = true;
+final_update_loss = est_loss_hist(1);
+if ~all(isfinite([RMSE_hist;est_loss_hist]))
+    status = 'failed'; status_msg = 'Non-finite initial objective or reconstruction.';
 end
-
-alpha_hat = init_state.alpha_hat;
-e_hat = init_state.e_hat;
-nu_hat = 1e-6 * ones(lambda_g, 1);  % no need to initialize this
-theta_hat = init_state.theta_hat;
-
-theta_hist = zeros(n, K_max);
-param_err = NaN(K_max, 1);
-rel_change = NaN(K_max, 1);
-RMSE_hist = NaN(K_max, 1);
-iter_time = NaN(K_max, 1);
-cum_time = NaN(K_max, 1);
-
-status = 'ok';
-status_msg = '';
-iter_count = K_max;
-has_converged = false;
-
-% Record common pre-update metrics so all methods start from iteration 0.
-theta_hist(:, 1) = theta_hat;
-param_err(1) = norm(theta_hat - theta_true) / norm(theta_true) * 100;
-c_sim_0 = simulate_wiener(r, nu, theta_hat, na, nb, nf, nd, lambda_g);
-res_0 = c - c_sim_0;
-RMSE_hist(1) = sqrt(mean(res_0.^2));
-rel_change(1) = 0;
-iter_time(1) = 0;
-cum_time(1) = 0;
-
-for k = 2:K_max
-    if enforce_fixed_iterations && has_converged
-        theta_hist(:, k) = theta_hat;
-        param_err(k) = param_err(k - 1);
-        rel_change(k) = 0;
-        RMSE_hist(k) = RMSE_hist(k - 1);
-        iter_time(k) = 0;
-        cum_time(k) = cum_time(k - 1);
-        continue;
-    end
-
+for k = 1:(K_max-1)
+    if ~strcmp(status,'max_iterations'), break; end
     t_iter = tic;
-
-    Phi_hat = build_state_matrix(alpha_hat, e_hat, r, na, nb, nf, nd);
-    [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, k - 1, nd);
-
-    if strcmp(aux_state.status, 'not_implemented')
-        status = 'skipped';
-        status_msg = aux_state.message;
-        iter_count = max(k - 1, 0);
-        break;
+    updates = updates+1;
+    try
+        [candidate, aux] = method_parameter_update(method_name,cfg,Phi,c,theta,k,nd);
+    catch exc
+        status = 'failed'; status_msg = exc.message; break;
     end
-
-    a_hat_v = theta_new(1:na);
-    b_hat_v = theta_new(na + 1:na + nb);
-    d_hat_v = theta_new(na + nb + (nf - 1) + 1:end);
-
-    nu_hat = c - Phi_hat * theta_new;
-
-    den_ar_hat = [1; d_hat_v(:)];
-    e_hat = filter(1, den_ar_hat.', nu_hat);
-    e_hat = e_hat(:);
-
-    den_lin_hat = [1; a_hat_v(:)];
-    num_lin_hat = [0; b_hat_v(:)];
-    alpha_hat = filter(num_lin_hat.', den_lin_hat.', r);
-    alpha_hat = alpha_hat(:);
-
-    rel_change(k) = norm(theta_new - theta_hat) / (norm(theta_hat) + 1e-15);
-    theta_hat = theta_new;
-    theta_hist(:, k) = theta_hat;
-
-    param_err(k) = norm(theta_hat - theta_true) / norm(theta_true) * 100;
-
-    c_sim = simulate_wiener(r, nu, theta_hat, na, nb, nf, nd, lambda_g);
-    res = c - c_sim;
-    RMSE_hist(k) = sqrt(mean(res.^2));
-
-    iter_time(k) = toc(t_iter);
-    cum_time(k) = cum_time(k - 1) + iter_time(k);
-
-    iter_num = k - 1;
-    if ismember(iter_num, [5 10 15 30 50 70 100 240]) || iter_num == (K_max - 1)
-        if verbose
-            fprintf('%-6d  ', iter_num);
-            fprintf('%-10.5f  ', theta_hat);
-            fprintf('%-10.5f  %-10.5f\n', param_err(k), cum_time(k));
-        end
+    if strcmp(aux.status,'not_implemented')
+        status = 'skipped'; status_msg = aux.message; break;
     end
-
-    if rel_change(k) < conv_threshold
-        if enforce_fixed_iterations
-            has_converged = true;
-            if verbose
-                fprintf('*** %s converged at iteration %d (holding parameters for remaining iterations) ***\n', method_name, iter_num);
-            end
+    td = tic;
+    [row, snapshot] = pl_step_diagnostics(method_name,cfg,Phi,c,theta,candidate,aux,k-1);
+    step_diagnostic_time = toc(td);
+    diagnostic_time = diagnostic_time+step_diagnostic_time;
+    rows{end+1} = row; %#ok<AGROW>
+    if cfg.diagnostics.save_matrices, snapshots{end+1} = snapshot; end %#ok<AGROW>
+    if ~all(isfinite(candidate))
+        rows{end}.rejected = 1; rows{end}.applied_step_norm = 0;
+        status = 'invalid_update'; status_msg = 'Rejected non-finite parameters.'; break;
+    end
+    nu_hat = c-Phi*candidate;
+    d = candidate(na+nb+nf:end);
+    e_next = filter(1,[1;d].',nu_hat);
+    alpha_next = filter([0;candidate(na+1:na+nb)].',[1;candidate(1:na)].',r);
+    Phi_next = build_state_matrix(alpha_next,e_next,r,na,nb,nf,nd);
+    rmse = sqrt(mean((c-simulate_wiener(r,nu,candidate,na,nb,nf,nd,lambda_g)).^2));
+    loss = 0.5*sum((c-Phi_next*candidate).^2);
+    if ~all(isfinite([loss;rmse;alpha_next;e_next]))
+        rows{end}.rejected = 1; rows{end}.applied_step_norm = 0;
+        status = 'invalid_update'; status_msg = 'Rejected non-finite objective or latent state.'; break;
+    end
+    change = norm(candidate-theta)/(norm(theta)+1e-15);
+    final_update_loss = 0.5*sum(nu_hat.^2);
+    theta = candidate; accepted = accepted+1;
+    if change < conv_threshold
+        if contains(method_name,'LGHAM')
+            satisfied = abs(final_update_loss-cfg.resolved_epsilon0) <= cfg.stopping.loss_tolerance*max(1,abs(cfg.resolved_epsilon0));
         else
-            iter_count = k;
-            if verbose
-                fprintf('*** %s converged at iteration %d ***\n', method_name, iter_num);
-            end
-            break;
+            satisfied = norm(Phi.'*(Phi*theta-c)) <= cfg.stopping.gradient_tolerance;
+        end
+        status = 'stalled'; status_msg = 'Small step without satisfying the residual tolerance.';
+        if satisfied, status = 'converged'; status_msg = 'Small step and residual tolerance satisfied.'; end
+        stopping_iteration = k;
+    end
+    Phi = Phi_next;
+    theta_hist(:,end+1) = theta; %#ok<AGROW>
+    param_err(end+1,1) = norm(theta-theta_true)/norm(theta_true)*100; %#ok<AGROW>
+    RMSE_hist(end+1,1) = rmse; est_loss_hist(end+1,1) = loss; %#ok<AGROW>
+    rel_change(end+1,1) = change; active_mask(end+1,1) = true; %#ok<AGROW>
+    iter_time(end+1,1) = max(0,toc(t_iter)-step_diagnostic_time); %#ok<AGROW>
+    cum_time(end+1,1) = cum_time(end)+iter_time(end); %#ok<AGROW>
+end
+wall_time = toc(t_start);
+valid = ismember(status,{'converged','stalled','max_iterations'});
+final_err = NaN;
+if valid
+    final_err = param_err(end);
+    if ~contains(method_name,'LGHAM'), best_error_so_far = min(best_error_so_far,final_update_loss); end
+end
+if enforce_fixed_iterations && valid
+    extra = K_max-size(theta_hist,2);
+    theta_hist = [theta_hist repmat(theta,1,extra)];
+    param_err = [param_err;repmat(param_err(end),extra,1)];
+    RMSE_hist = [RMSE_hist;repmat(RMSE_hist(end),extra,1)];
+    est_loss_hist = [est_loss_hist;repmat(est_loss_hist(end),extra,1)];
+    rel_change = [rel_change;zeros(extra,1)]; iter_time = [iter_time;zeros(extra,1)];
+    cum_time = [cum_time;repmat(cum_time(end),extra,1)];
+    active_mask = [active_mask;false(extra,1)];
+end
+diagnostics = pack_diagnostics(rows);
+result = struct('name',method_name,'status',status,'status_msg',status_msg, ...
+    'theta_hat',theta,'theta0',theta0,'theta_hist',theta_hist,'param_err',param_err, ...
+    'rel_change',rel_change,'RMSE_hist',RMSE_hist,'rmse_hist',RMSE_hist,'est_loss_hist',est_loss_hist, ...
+    'iter_time',iter_time,'cum_time',cum_time,'active_mask',active_mask,'final_err',final_err, ...
+    'total_time',max(0,wall_time-diagnostic_time),'total_wall_time',wall_time,'diagnostic_time',diagnostic_time, ...
+    'iterations',size(theta_hist,2),'update_count',updates,'accepted_updates',accepted, ...
+    'stopping_iteration',stopping_iteration,'best_error_so_far',best_error_so_far, ...
+    'run_metadata',metadata,'resolved_config_json',resolved_config_json, ...
+    'objective_definition','half_sum_squared_refreshed_PL_residual', ...
+    'rmse_definition','true_innovation_reconstruction','diagnostics',diagnostics, ...
+    'diagnostic_summary',summarize_optimization_diagnostics(diagnostics),'derivative_snapshots',{snapshots});
+if verbose, fprintf('%s: %s; %d accepted updates. %s\n',method_name,status,accepted,status_msg); end
+end
+
+function [row, snapshot] = pl_step_diagnostics(name,cfg,Phi,c,theta,candidate,aux,iteration)
+row = struct('evaluation_iteration',iteration,'available',0,'diagnostic_status','ok', ...
+    'solver_kind','none','projected',aux.projected,'rejected',0, ...
+    'solver_fallback',aux.solver_fallback,'proposed_step_norm',aux.proposed_step_norm, ...
+    'applied_step_norm',norm(candidate-theta),'d_step_multiplier',get_optional_field(cfg,'d_step_multiplier',1));
+snapshot = struct('evaluation_iteration',iteration);
+if ~cfg.diagnostics.enabled, row.diagnostic_status = 'disabled'; return; end
+g = Phi.'*(Phi*theta-c);
+row.gradient_norm = norm(g);
+row.update_loss_before = 0.5*sum((c-Phi*theta).^2);
+row.update_loss_after = 0.5*sum((c-Phi*candidate).^2);
+if strcmpi(name,'WS-GGI'), return; end
+H = Phi.'*Phi;
+try
+    row = add_matrix_metrics(row,H,'raw'); row.available = 1;
+    reg = max(0,get_optional_field(cfg,'hessian_regularization',0));
+    solver = [];
+    if strcmpi(name,'WS-GNI')
+        solver = H+reg*eye(size(H)); row.solver_kind = 'regularized_hessian';
+    elseif contains(upper(name),'DH')
+        solver = diag(sum(Phi.^2,1).'+reg); row.solver_kind = 'regularized_diagonal';
+    elseif strcmpi(name,'RGLS')
+        reg = 0;
+        if isfield(cfg,'regularization') && get_optional_field(cfg.regularization,'enabled',false)
+            reg = max(0,get_optional_field(cfg.regularization,'lambda',0));
+        end
+        if reg > 0
+            solver = H+reg*eye(size(H)); row.solver_kind = 'regularized_normal_matrix';
+        else
+            row.solver_kind = 'rectangular_least_squares';
+            row.design_condition = cond(Phi); % Actual solve is Phi\c, not H\(Phi'*c).
+        end
+    elseif contains(name,'LGHAM')
+        row.solver_kind = 'gradient_row';
+        reg = get_optional_field(cfg,'tikhonov_lambda',0);
+        if ~strcmpi(get_optional_field(cfg,'inverse_solver','pinv'),'tikhonov'), reg = 0; end
+        row.inverse_denominator = dot(g,g)+reg^2; % MATLAB lsqminnorm uses lambda^2.
+    end
+    row.regularization = reg;
+    if ~isempty(solver), row = add_matrix_metrics(row,solver,'solver'); end
+    if isfield(cfg.diagnostics,'parameter_scales')
+        scales = cfg.diagnostics.parameter_scales(:);
+        assert(numel(scales)==numel(theta) && all(isfinite(scales) & scales>0),'Invalid parameter_scales.');
+        metrics = matrix_diagnostics(diag(scales)*H*diag(scales));
+        row.scaled_condition = metrics.condition;
+    end
+    if cfg.diagnostics.save_matrices
+        snapshot.hess = H; snapshot.solver_matrix = solver;
+    end
+catch exc
+    row.diagnostic_status = exc.message;
+end
+end
+
+function row = add_matrix_metrics(row,A,prefix)
+metrics = matrix_diagnostics(A);
+keys = fieldnames(metrics);
+for j = 1:numel(keys), row.([prefix '_' keys{j}]) = metrics.(keys{j}); end
+end
+
+function d = pack_diagnostics(rows)
+d = struct('evaluation_iteration',zeros(0,1));
+if isempty(rows), return; end
+keys = {};
+for j = 1:numel(rows), keys = union(keys,fieldnames(rows{j})); end
+for i = 1:numel(keys)
+    key = keys{i};
+    is_text = ismember(key,{'solver_kind','diagnostic_status'});
+    if is_text, values = repmat({''},numel(rows),1); else, values = NaN(numel(rows),1); end
+    for j = 1:numel(rows)
+        if isfield(rows{j},key)
+            if is_text, values{j} = rows{j}.(key); else, values(j) = rows{j}.(key); end
         end
     end
+    d.(key) = values;
+end
 end
 
-% Final error
-final_error = 0.5*sum((c-Phi_hat*theta_hat).^2);
-if (final_error < best_error_so_far) && ~contains(method_name, 'LGHAM')
-    best_error_so_far = final_error;
+function digest = hash_values(values)
+values = double(values(:));
+[~,~,endian] = computer;
+if endian == 'B', values = swapbytes(values); end
+digest = sha256_bytes(typecast(values,'uint8'));
 end
 
-if strcmp(status, 'ok')
-    theta_hist = theta_hist(:, 1:iter_count);
-    param_err = param_err(1:iter_count);
-    rel_change = rel_change(1:iter_count);
-    RMSE_hist = RMSE_hist(1:iter_count);
-    iter_time = iter_time(1:iter_count);
-    cum_time = cum_time(1:iter_count);
-    final_err = param_err(end);
-    total_time = cum_time(end);
-else
-    theta_hist = zeros(n, 0);
-    param_err = zeros(0, 1);
-    rel_change = zeros(0, 1);
-    RMSE_hist = zeros(0, 1);
-    iter_time = zeros(0, 1);
-    cum_time = zeros(0, 1);
-    final_err = NaN;
-    total_time = 0;
-    theta_hat = [];
+function digest = sha256_bytes(bytes)
+md = java.security.MessageDigest.getInstance('SHA-256');
+md.update(uint8(bytes));
+digest = lower(reshape(dec2hex(typecast(md.digest(),'uint8'),2).',1,[]));
 end
 
-if ~isempty(status_msg) && verbose
-    fprintf('  %s\n', status_msg);
-end
-
-result = struct( ...
-    'name', method_name, ...
-    'status', status, ...
-    'status_msg', status_msg, ...
-    'theta_hat', theta_hat, ...
-    'theta_hist', theta_hist, ...
-    'param_err', param_err, ...
-    'rel_change', rel_change, ...
-    'RMSE_hist', RMSE_hist, ...
-    'iter_time', iter_time, ...
-    'cum_time', cum_time, ...
-    'final_err', final_err, ...
-    'total_time', total_time, ...
-    'iterations', iter_count, ...
-    'best_error_so_far', best_error_so_far);
-end
-
-function [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, iter_idx, nd)
+function [theta_new, aux_state] = method_parameter_update(method_name, method_cfg, Phi_hat, c, theta_hat, ~, nd)
 theta_new = theta_hat;
-aux_state = struct('status', 'ok', 'message', '');
+aux_state = struct('status', 'ok', 'message', '', 'projected',false,'solver_fallback',0,'proposed_step_norm',NaN);
 
 switch upper(method_name)
     case 'WS-GGI'
@@ -427,10 +476,14 @@ switch upper(method_name)
         theta_new = theta_hat + d_scale .* update_dir;
 
     case 'RGLS'
-        theta_new = ws_rgls_update(Phi_hat, c, method_cfg);
+        raw = solve_stable_least_squares(Phi_hat,c,method_cfg);
+        theta_new = raw;
+        if all(isfinite(raw)), theta_new = project_stable_theta(raw,method_cfg); end
+        aux_state.projected = ~isequal(raw,theta_new);
+        aux_state.proposed_step_norm = norm(raw-theta_hat);
 
     case 'WS-GNI'
-        theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg, nd);
+        [theta_new, aux_state.solver_fallback] = ws_gni_update(Phi_hat, c, theta_hat, method_cfg, nd);
 
     case {'WS_GGHAM_1_DH', 'WS-GGHAM-1-DH'}
         theta_new = ws_ggham_1_dh_update(Phi_hat, c, theta_hat, method_cfg);
@@ -458,11 +511,7 @@ switch upper(method_name)
         aux_state.status = 'not_implemented';
         aux_state.message = sprintf('Unknown method "%s". Add its config and update rule before running it.', method_name);
 end
-end
-
-function theta_new = ws_rgls_update(Phi_hat, c, method_cfg)
-theta_ls = solve_stable_least_squares(Phi_hat, c, method_cfg);
-theta_new = project_stable_theta(theta_ls, method_cfg); % can be deactivated in config file
+if isnan(aux_state.proposed_step_norm), aux_state.proposed_step_norm = norm(theta_new-theta_hat); end
 end
 
 function theta_new = ws_ggham_2_i_update(Phi_hat, c, theta_hat, method_cfg)
@@ -566,7 +615,7 @@ gg = gradient_root.' * gradient_root;
 switch solver
     case 'pinv'
         if gg <= eps
-            direction = zeros(size(g));
+            direction = zeros(size(gradient_root));
         else
             direction = gradient_root'\ rhs_scalar;
         end
@@ -583,7 +632,7 @@ switch solver
 end
 end
 
-function theta_new = ws_gni_update(Phi_hat, c, theta_hat, method_cfg, nd)
+function [theta_new, fallback] = ws_gni_update(Phi_hat, c, theta_hat, method_cfg, nd)
 step_size = 1.0;
 if isfield(method_cfg, 'step_size')
     step_size = method_cfg.step_size;
@@ -602,7 +651,8 @@ if lambda_reg > 0
     H = H + lambda_reg * eye(size(H));
 end
 
-if rcond(H) < 1e-12
+fallback = rcond(H) < 1e-12;
+if fallback
     direction = pinv(H) * gradient;
 else
     direction = H \ gradient;
@@ -656,7 +706,7 @@ direction = gradient ./ (diag_H);
 theta_new = theta_hat + eta * direction;
 end
 
-function init_state = initialize_method_state(method_cfg, r, c, na, nb, lambda_g, n)
+function init_state = initialize_method_state(method_cfg, r, c, na, nb, nf, nd, lambda_g, n)
 alpha_hat = 1e-6 * ones(lambda_g, 1);
 e_hat = 1e-6 * ones(lambda_g, 1);
 theta_hat = 1e-6 * ones(n, 1);
@@ -667,6 +717,19 @@ if ~isfield(method_cfg, 'initialization')
 end
 
 init_cfg = method_cfg.initialization;
+policy = get_optional_field(init_cfg,'policy','legacy');
+if strcmpi(policy,'consistent')
+    theta_hat = init_cfg.theta0(:);
+    assert(numel(theta_hat)==n && all(isfinite(theta_hat)), 'theta0 must contain n finite parameters.');
+    a = theta_hat(1:na); d = theta_hat(na+nb+nf:end);
+    assert(all(abs(roots([1;a]))<1) && all(abs(roots([1;d]))<1), 'theta0 denominators must be stable.');
+    alpha_hat = filter([0;theta_hat(na+1:na+nb)].',[1;a].',r);
+    beta = polyval([flipud(theta_hat(na+nb+1:na+nb+nf-1));1;0].',alpha_hat);
+    e_hat = c-beta;
+    init_state = struct('alpha_hat',alpha_hat,'e_hat',e_hat,'theta_hat',theta_hat);
+    return;
+end
+assert(strcmpi(policy,'legacy'),'Unknown initialization policy.');
 
 if isfield(init_cfg, 'theta_init')
     theta_init = init_cfg.theta_init;
@@ -909,7 +972,7 @@ labels = [arrayfun(@(i) sprintf('a_%d', i), 1:na, 'UniformOutput', false), ...
           arrayfun(@(i) sprintf('d_%d', i), 1:nd, 'UniformOutput', false)];
 end
 
-function save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, experiment_name, mode, seed, N_MC, example_data, mc_summary)
+function payload = save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, experiment_name, mode, seed, N_MC, example_data, mc_summary, all_runs, resolved_experiment)
 out_dir = fileparts(output_file);
 if ~exist(out_dir, 'dir')
     mkdir(out_dir);
@@ -934,48 +997,18 @@ experiment = struct( ...
     'param_labels', {param_labels}, ...
     'selected_methods', {selected_methods});
 
-result_template = struct( ...
-    'name', '', ...
-    'status', '', ...
-    'status_msg', '', ...
-    'theta_hat', [], ...
-    'theta_hist', [], ...
-    'param_err', [], ...
-    'rel_change', [], ...
-    'rmse_hist', [], ...
-    'iter_time', [], ...
-    'cum_time', [], ...
-    'final_err', NaN, ...
-    'total_time', NaN, ...
-    'iterations', 0);
-
-if isempty(results_in)
-    results = result_template([]);
-else
-    results = repmat(result_template, 1, numel(results_in));
-    for m = 1:numel(results_in)
-        results(m).name = results_in(m).name;
-        results(m).status = results_in(m).status;
-        results(m).status_msg = results_in(m).status_msg;
-        results(m).theta_hat = results_in(m).theta_hat(:);
-        results(m).theta_hist = results_in(m).theta_hist;
-        results(m).param_err = results_in(m).param_err(:);
-        results(m).rel_change = results_in(m).rel_change(:);
-        results(m).rmse_hist = results_in(m).RMSE_hist(:);
-        results(m).iter_time = results_in(m).iter_time(:);
-        results(m).cum_time = results_in(m).cum_time(:);
-        results(m).final_err = results_in(m).final_err;
-        results(m).total_time = results_in(m).total_time;
-        results(m).iterations = results_in(m).iterations;
-    end
-end
-
-save(output_file, 'parametrization', 'generated_at', 'experiment', 'results', 'example_data', 'mc_summary', '-v7');
+results = results_in;
+schema_version = 2;
+resolved_experiment_json = jsonencode(resolved_experiment);
+payload = struct('parametrization',parametrization,'generated_at',generated_at, ...
+    'experiment',experiment,'results',results,'example_data',example_data,'mc_summary',mc_summary, ...
+    'all_runs',{all_runs},'schema_version',schema_version,'resolved_experiment_json',resolved_experiment_json);
+save(output_file,'-struct','payload','-v7');
 fprintf('\nSaved PL results to: %s\n', output_file);
 end
 
 function plot_method_metrics(results)
-valid_idx = find(strcmp({results.status}, 'ok'));
+valid_idx = find(ismember({results.status}, {'ok','converged','stalled','max_iterations'}));
 if isempty(valid_idx)
     warning('No implemented methods produced results. Skipping plots.');
     return;
@@ -1035,7 +1068,7 @@ sgtitle('Wiener System Identification - Method Comparison', 'FontSize', 13, 'Fon
 end
 
 function plot_parameter_trajectories(results, theta_true, param_labels)
-valid_idx = find(strcmp({results.status}, 'ok'));
+valid_idx = find(ismember({results.status}, {'ok','converged','stalled','max_iterations'}));
 if isempty(valid_idx)
     return;
 end

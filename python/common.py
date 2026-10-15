@@ -117,7 +117,7 @@ def print_iteration_table(
 
 
 def plot_method_metrics(results: list[dict[str, Any]]) -> None:
-    valid_results = [res for res in results if res["status"] == "ok"]
+    valid_results = [res for res in results if res["status"] in {"ok", "converged", "max_iterations", "stalled"}]
     if not valid_results:
         return
 
@@ -157,7 +157,7 @@ def plot_method_metrics(results: list[dict[str, Any]]) -> None:
 
 
 def plot_parameter_trajectories(results: list[dict[str, Any]], theta_true: np.ndarray, param_labels: list[str]) -> None:
-    valid_results = [res for res in results if res["status"] == "ok"]
+    valid_results = [res for res in results if res["status"] in {"ok", "converged", "max_iterations", "stalled"}]
     if not valid_results:
         return
 

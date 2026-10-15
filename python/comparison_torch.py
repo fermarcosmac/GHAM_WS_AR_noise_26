@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from copy import deepcopy
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,14 +24,15 @@ from common import (
     now,
     plot_method_metrics,
     plot_parameter_trajectories,
-    print_iteration_table,
     set_seed,
 )
+from diagnostics import (array_digest, config_json, resolve_method_config, step_diagnostics, pack_diagnostics, summarize_diagnostics)
 from methods import method_parameter_update
 from wiener_system import (
     WienerDimensions,
+    _resolve_fsm_lengths,
+    extract_loss_derivatives,
     build_state_matrix,
-    estimate_innovations_from_signal_residual,
     estimate_innovations_from_state,
     fsm_kwargs_from_config,
     generate_example_data,
@@ -63,6 +64,8 @@ def save_comparison_results(
     n_mc: int = 1,
     example_data: dict[str, Any] | None = None,
     mc_summary: dict[str, Any] | None = None,
+    all_runs: list | None = None,
+    resolved_experiment: dict | None = None,
 ) -> None:
     try:
         from scipy.io import savemat
@@ -72,33 +75,17 @@ def save_comparison_results(
     output_file.parent.mkdir(parents=True, exist_ok=True)
     param_names = build_param_names(dims.na, dims.nb, dims.nf, dims.nd)
     param_labels = build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd)
-    result_fields = (
-        "name",
-        "status",
-        "status_msg",
-        "theta_hat",
-        "theta_hist",
-        "param_err",
-        "rel_change",
-        "rmse_hist",
-        "iter_time",
-        "cum_time",
-        "final_err",
-        "total_time",
-        "iterations",
-    )
-    mat_results = np.empty((1, len(results)), dtype=[(field, "O") for field in result_fields])
-
-    for idx, result in enumerate(results):
-        for field in result_fields:
-            value = result[field]
-            if field == "theta_hat":
-                value = np.asarray(value, dtype=float).reshape(-1, 1)
-            elif field in {"param_err", "rel_change", "rmse_hist", "iter_time", "cum_time"}:
-                value = np.asarray(value, dtype=float).reshape(-1, 1)
-            elif field == "theta_hist":
-                value = np.asarray(value, dtype=float)
-            mat_results[field][0, idx] = value
+    def mat_struct(items):
+        fields = list(items[0]) if items else []
+        output = np.empty((1, len(items)), dtype=[(field, "O") for field in fields])
+        for idx, result in enumerate(items):
+            for field in fields:
+                value = result[field]
+                if field == "derivative_snapshots":
+                    value = np.asarray(value, dtype=object)
+                output[field][0, idx] = value
+        return output
+    mat_results = mat_struct(results)
 
     experiment = {
         "name": experiment_name,
@@ -119,6 +106,8 @@ def save_comparison_results(
     }
 
     payload = {
+        "schema_version": 2,
+        "resolved_experiment_json": config_json(resolved_experiment or {}),
         "parametrization": "FSM",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "experiment": experiment,
@@ -129,199 +118,157 @@ def save_comparison_results(
     if mc_summary is not None:
         payload["mc_summary"] = mc_summary
 
+    cells = np.empty((1, len(all_runs or [results])), dtype=object)
+    for idx, run in enumerate(all_runs or [results]):
+        cells[0, idx] = mat_struct(run)
+    payload["all_runs"] = cells
     savemat(output_file, payload, long_field_names=True)
     print(f"\nSaved FSM results to: {output_file}")
 
 
 def run_identification_method(
-    method_name: str,
-    method_cfg: dict[str, Any],
-    r: torch.Tensor,
-    nu: torch.Tensor,
-    c: torch.Tensor,
-    theta_true: torch.Tensor,
-    dims: WienerDimensions,
-    lambda_g: int,
-    K_max: int,
-    conv_threshold: float,
-    *,
-    enforce_fixed_iterations: bool = False,
-    verbose: bool = True,
+    method_name: str, method_cfg: dict[str, Any], r: torch.Tensor, nu: torch.Tensor,
+    c: torch.Tensor, theta_true: torch.Tensor, dims: WienerDimensions,
+    lambda_g: int, K_max: int, conv_threshold: float, *,
+    enforce_fixed_iterations: bool = False, verbose: bool = True,
+    run_metadata: dict | None = None,
 ) -> dict[str, Any]:
-    init_state = initialize_method_state(method_cfg, r, c, dims)
-    alpha_hat = init_state["alpha_hat"]
-    e_hat = init_state["e_hat"]
-    theta_hat = init_state["theta_hat"]
-    innovation_mode = str(method_cfg.get("innovation_estimator", "fsm_inverse")).lower()
+    if K_max < 1 or conv_threshold < 0:
+        raise ValueError("K_max must be positive and conv_threshold nonnegative")
+    method_cfg = resolve_method_config(method_cfg)
+    method_cfg.setdefault("innovation_estimator", "fsm_inverse")
+    method_cfg.setdefault("stability_projection", True)
+    method_cfg.setdefault("stability_radius", 0.98)
+    method_cfg.setdefault("d_step_multiplier", 1.)
+    lengths = _resolve_fsm_lengths(len(r), **fsm_kwargs_from_config(method_cfg))
+    method_cfg.update(dict(zip(("fsm_tau_g", "fsm_tau_h", "fsm_n_freq"), lengths)))
+    method_cfg["run_settings"] = {"K_max": K_max, "conv_threshold": conv_threshold,
+                                  "enforce_fixed_iterations": enforce_fixed_iterations}
+    if "LGHAM" in method_name.upper():
+        target = method_cfg.get("eps_0", method_cfg.get("epsilon0", 0.))
+        method_cfg["resolved_epsilon0"] = float(method_cfg.get("best_error_so_far", 0.)) if str(target).lower() == "automatic" else float(target)
+    init = initialize_method_state(method_cfg, r, c, dims)
+    theta_hat = init["theta_hat"]
+    theta0 = theta_hat.detach().cpu().numpy().copy()
+    alpha_hat, e_hat = init["alpha_hat"], init["e_hat"]
     fsm_kwargs = fsm_kwargs_from_config(method_cfg)
-    nu_init = method_cfg.get("innovation_init", 1e-6)
-    if isinstance(nu_init, (int, float)):
-        nu_hat = torch.full_like(c, float(nu_init))
-    else:
-        nu_hat = torch.as_tensor(nu_init, dtype=c.dtype, device=c.device).reshape(-1)
-        if nu_hat.numel() != c.numel():
-            raise ValueError("innovation_init must be scalar or have the same length as the output record.")
-
-    theta_hist = torch.zeros((dims.n_params, K_max), dtype=r.dtype, device=r.device)
-    param_err = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
-    rel_change = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
-    rmse_hist = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
-    est_loss_hist = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
-    iter_time = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
-    cum_time = torch.full((K_max,), torch.nan, dtype=r.dtype, device=r.device)
-
-    status = "ok"
-    status_msg = ""
-    iter_count = K_max
-    has_converged = False
-    converged_iter: int | None = None
-    derivative_snapshots: list[dict[str, np.ndarray]] = []
-
-    theta_hist[:, 0] = theta_hat
-    param_err[0] = torch.linalg.vector_norm(theta_hat - theta_true) / torch.linalg.vector_norm(theta_true) * 100.0
+    innovation_mode = method_cfg["innovation_estimator"]
     if innovation_mode not in {"state_residual", "fsm_inverse"}:
-        raise ValueError(f"Unknown innovation_estimator '{innovation_mode}'.")
-    c_sim_0 = simulate_wiener(r, nu, theta_hat, dims)
-    rmse_hist[0] = torch.sqrt(torch.mean((c - c_sim_0).pow(2)))
-    if innovation_mode == "fsm_inverse":
-        innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
-        nu_hat = innovation_state["nu_hat"]
-    est_loss_hist[0] = parameter_to_loss(theta_hat, r, nu_hat, c, dims, **fsm_kwargs)
-    rel_change[0] = 0.0
-    iter_time[0] = 0.0
-    cum_time[0] = 0.0
+        raise ValueError(f"Unknown innovation_estimator {innovation_mode!r}")
+    nu_hat = torch.zeros_like(c)  # FSM loss reconstructs innovations from measured data.
+    metadata = dict(run_metadata or {})
+    metadata.update({"data_sha256": array_digest(r, c), "initialization_sha256": array_digest(theta0),
+                     "backend": "python", "dtype": str(r.dtype), "device": str(r.device),
+                     "torch_version": str(torch.__version__), "python_version": sys.version.split()[0]})
+    metadata["dataset_id"] = metadata["data_sha256"]
+    metadata["config_sha256"] = hashlib.sha256(config_json(method_cfg).encode("utf-8")).hexdigest()
+    metadata["run_id"] = ":".join((metadata["dataset_id"], method_name, metadata["initialization_sha256"], metadata["config_sha256"]))
+    history = {k: [] for k in ("param_err", "rmse_hist", "est_loss_hist", "rel_change", "iter_time", "cum_time", "active_mask")}
+    theta_history = []
+    rows, snapshots = [], []
+    status, message = "max_iterations", "Iteration budget exhausted."
+    updates = accepted = 0
+    stopping_iteration = -1
+    diagnostic_time = 0.
+    start_time = now()
 
-    for k in tqdm(range(1, K_max), desc=method_name, unit="iter", leave=False):
-        if enforce_fixed_iterations and has_converged:
-            theta_hist[:, k] = theta_hat
-            param_err[k] = param_err[k - 1]
-            rel_change[k] = 0.0
-            rmse_hist[k] = rmse_hist[k - 1]
-            est_loss_hist[k] = est_loss_hist[k - 1]
-            iter_time[k] = 0.0
-            cum_time[k] = cum_time[k - 1]
-            continue
+    def record(theta, elapsed=0., change=0., active=True):
+        theta_history.append(theta.detach().cpu().numpy().copy())
+        history["param_err"].append(float(torch.linalg.vector_norm(theta-theta_true) / torch.linalg.vector_norm(theta_true) * 100.))
+        history["rmse_hist"].append(float(torch.sqrt(torch.mean((c-simulate_wiener(r, nu, theta, dims)).square()))))
+        history["est_loss_hist"].append(float(parameter_to_loss(theta, r, nu_hat, c, dims, **fsm_kwargs)))
+        history["rel_change"].append(change)
+        history["iter_time"].append(elapsed)
+        history["cum_time"].append((history["cum_time"][-1] if history["cum_time"] else 0.) + elapsed)
+        history["active_mask"].append(active)
 
-        t0 = now()
-        if innovation_mode == "fsm_inverse":
-            innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
-            nu_hat = innovation_state["nu_hat"]
-            phi_hat = None
-        else:
-            phi_hat = build_state_matrix(alpha_hat, e_hat, r, dims)
-
-        theta_new, aux_state = method_parameter_update(
-            method_name,
-            method_cfg,
-            phi_hat,
-            c,
-            theta_hat,
-            r=r,
-            nu=nu_hat,
-            dims=dims,
-            iter_idx=k,
-        )
-
-        if aux_state["derivatives"] is not None:
-            snapshot = {name: value.detach().cpu().numpy() for name, value in aux_state["derivatives"].items() if name != "loss"}
-            derivative_snapshots.append(snapshot)
-
-        if aux_state["status"] == "not_implemented":
-            status = "skipped"
-            status_msg = aux_state["message"]
-            iter_count = k
-            break
-
-        rel_change[k] = torch.linalg.vector_norm(theta_new - theta_hat) / (torch.linalg.vector_norm(theta_hat) + 1e-15)
-        theta_hat = theta_new
-        theta_hist[:, k] = theta_hat
-
-        if innovation_mode == "fsm_inverse":
-            innovation_state = estimate_innovations_from_signal_residual(theta_hat, r, c, dims, **fsm_kwargs)
-            nu_hat = innovation_state["nu_hat"]
-            alpha_hat = innovation_state["alpha_hat"]
-            e_hat = innovation_state["e_hat"]
-        else:
-            assert phi_hat is not None
-            nu_hat = estimate_innovations_from_state(phi_hat, c, theta_hat)
-            latent_state = update_latent_state_from_innovations(theta_hat, r, nu_hat, dims)
-            alpha_hat = latent_state["alpha_hat"]
-            e_hat = latent_state["e_hat"]
-
-        param_err[k] = torch.linalg.vector_norm(theta_hat - theta_true) / torch.linalg.vector_norm(theta_true) * 100.0
-        c_sim = simulate_wiener(r, nu, theta_hat, dims)
-        rmse_hist[k] = torch.sqrt(torch.mean((c - c_sim).pow(2)))
-        est_loss_hist[k] = parameter_to_loss(theta_hat, r, nu_hat, c, dims, **fsm_kwargs)
-
-        iter_time[k] = now() - t0
-        cum_time[k] = cum_time[k - 1] + iter_time[k]
-
-        if rel_change[k].item() < conv_threshold:
-            if enforce_fixed_iterations:
-                has_converged = True
-                converged_iter = k
-            else:
-                iter_count = k + 1
-                converged_iter = k
-                break
-
-    if status == "ok":
-        theta_hist = theta_hist[:, :iter_count]
-        param_err = param_err[:iter_count]
-        rel_change = rel_change[:iter_count]
-        rmse_hist = rmse_hist[:iter_count]
-        est_loss_hist = est_loss_hist[:iter_count]
-        iter_time = iter_time[:iter_count]
-        cum_time = cum_time[:iter_count]
-        final_err = float(param_err[-1].item())
-        total_time = float(cum_time[-1].item())
-        theta_out = theta_hat.detach().cpu().numpy()
+    record(theta_hat)
+    if not np.isfinite([history["rmse_hist"][0], history["est_loss_hist"][0]]).all():
+        status, message = "failed", "Initial objective or reconstruction is non-finite."
     else:
-        theta_hist = torch.zeros((dims.n_params, 0), dtype=r.dtype, device=r.device)
-        param_err = torch.zeros(0, dtype=r.dtype, device=r.device)
-        rel_change = torch.zeros(0, dtype=r.dtype, device=r.device)
-        rmse_hist = torch.zeros(0, dtype=r.dtype, device=r.device)
-        est_loss_hist = torch.zeros(0, dtype=r.dtype, device=r.device)
-        iter_time = torch.zeros(0, dtype=r.dtype, device=r.device)
-        cum_time = torch.zeros(0, dtype=r.dtype, device=r.device)
-        final_err = float("nan")
-        total_time = 0.0
-        theta_out = np.array([])
-
-    if status_msg:
-        print(f"  {status_msg}")
-
-    if status == "ok" and verbose:
-        if converged_iter is not None:
-            if enforce_fixed_iterations:
-                print(f"*** {method_name} converged at iteration {converged_iter} (holding parameters for remaining iterations) ***")
-            else:
-                print(f"*** {method_name} converged at iteration {converged_iter} ***")
-        print_iteration_table(
-            build_param_names(dims.na, dims.nb, dims.nf, dims.nd),
-            theta_hist.detach().cpu().numpy(),
-            param_err.detach().cpu().numpy(),
-            cum_time.detach().cpu().numpy(),
-            title=f"{method_name} Iteration Summary",
-        )
-
-    return {
-        "name": method_name,
-        "status": status,
-        "status_msg": status_msg,
-        "theta_hat": theta_out,
-        "theta_hist": theta_hist.detach().cpu().numpy(),
-        "param_err": param_err.detach().cpu().numpy(),
-        "rel_change": rel_change.detach().cpu().numpy(),
-        "rmse_hist": rmse_hist.detach().cpu().numpy(),
-        "est_loss_hist": est_loss_hist.detach().cpu().numpy(),
-        "iter_time": iter_time.detach().cpu().numpy(),
-        "cum_time": cum_time.detach().cpu().numpy(),
-        "final_err": final_err,
-        "total_time": total_time,
-        "iterations": theta_hist.shape[1],
-        "derivative_snapshots": derivative_snapshots,
-    }
+        for k in tqdm(range(1, K_max), desc=method_name, unit="iter", leave=False, disable=not verbose):
+            t0 = now()
+            phi_hat = None
+            if innovation_mode == "state_residual":
+                phi_hat = build_state_matrix(alpha_hat, e_hat, r, dims)
+            updates += 1
+            try:
+                candidate, aux = method_parameter_update(method_name, method_cfg, phi_hat, c, theta_hat,
+                                                         r=r, nu=nu_hat, dims=dims, iter_idx=k)
+            except (RuntimeError, FloatingPointError) as exc:
+                status, message = "failed", str(exc)
+                break
+            derivatives = aux.get("derivatives") or {}
+            td = now()
+            rows.append(step_diagnostics(derivatives, aux, method_cfg, k-1))
+            if method_cfg["diagnostics"]["enabled"] and method_cfg["diagnostics"]["save_matrices"]:
+                snapshots.append({"evaluation_iteration": k-1, **{key: value.detach().cpu().numpy()
+                                  for key, value in derivatives.items() if isinstance(value, torch.Tensor)}})
+            step_diag_time = now()-td
+            diagnostic_time += step_diag_time
+            if aux["status"] == "not_implemented":
+                status, message = "skipped", aux["message"]
+                break
+            if aux["status"] == "invalid_update" or not torch.all(torch.isfinite(candidate)):
+                status, message = "invalid_update", aux.get("message", "Non-finite update")
+                break
+            candidate_loss = parameter_to_loss(candidate, r, nu_hat, c, dims, **fsm_kwargs)
+            candidate_output = simulate_wiener(r, nu, candidate, dims)
+            if not torch.isfinite(candidate_loss) or not torch.all(torch.isfinite(candidate_output)):
+                rows[-1]["rejected"] = 1.
+                rows[-1]["applied_step_norm"] = 0.
+                status, message = "invalid_update", "Candidate objective or reconstruction is non-finite."
+                break
+            change = float(torch.linalg.vector_norm(candidate-theta_hat)/(torch.linalg.vector_norm(theta_hat)+1e-15))
+            theta_hat = candidate
+            accepted += 1
+            if innovation_mode == "state_residual":
+                nu_hat = estimate_innovations_from_state(phi_hat, c, theta_hat)
+                latent = update_latent_state_from_innovations(theta_hat, r, nu_hat, dims)
+                alpha_hat, e_hat = latent["alpha_hat"], latent["e_hat"]
+            small_step = change < conv_threshold
+            if small_step:
+                if "LGHAM" in method_name.upper():
+                    target = float(method_cfg.get("resolved_epsilon0", method_cfg.get("eps_0", 0.)))
+                    satisfied = abs(float(candidate_loss)-target) <= method_cfg["stopping"]["loss_tolerance"] * max(1., abs(target))
+                else:
+                    g = extract_loss_derivatives(theta_hat, r, nu_hat, c, dims, max_order=1, **fsm_kwargs)["grad"]
+                    satisfied = float(torch.linalg.vector_norm(g)) <= method_cfg["stopping"]["gradient_tolerance"]
+                status = "converged" if satisfied else "stalled"
+                message = "Small step and residual tolerance satisfied." if satisfied else "Small step without satisfying the residual tolerance."
+                stopping_iteration = k
+            record(theta_hat, change=change)
+            elapsed = max(0., now()-t0-step_diag_time)
+            history["iter_time"][-1] = elapsed
+            history["cum_time"][-1] += elapsed
+            if small_step:
+                break
+    wall_time = now()-start_time
+    # Retain the last finite state on failure; never report its error as a successful final score.
+    valid = status in {"converged", "max_iterations", "stalled"}
+    actual_samples = len(theta_history)
+    if enforce_fixed_iterations and valid:
+        while len(theta_history) < K_max:
+            theta_history.append(theta_history[-1].copy())
+            for key in history:
+                value = False if key == "active_mask" else (0. if key in {"iter_time", "rel_change"} else history[key][-1])
+                history[key].append(value)
+    packed = pack_diagnostics(rows)
+    result = {"name": method_name, "status": status, "status_msg": message,
+              "theta_hat": theta_hat.detach().cpu().numpy(), "theta0": theta0,
+              "theta_hist": np.asarray(theta_history).T,
+              **{key: np.asarray(value) for key, value in history.items()},
+              "final_err": history["param_err"][actual_samples-1] if valid else float("nan"),
+              "total_time": max(0., wall_time-diagnostic_time), "total_wall_time": wall_time,
+              "diagnostic_time": diagnostic_time, "iterations": len(theta_history),
+              "update_count": updates, "accepted_updates": accepted, "stopping_iteration": stopping_iteration,
+              "run_metadata": metadata, "resolved_config_json": config_json(method_cfg),
+              "objective_definition": "mean_squared_innovation", "rmse_definition": "true_innovation_reconstruction",
+              "diagnostics": packed, "diagnostic_summary": summarize_diagnostics(packed),
+              "derivative_snapshots": snapshots}
+    if verbose:
+        print(f"{method_name}: {status}; {accepted} accepted updates. {message}")
+    return result
 
 
 def load_experiment_config(experiment_name: str) -> dict[str, Any]:
@@ -378,11 +325,13 @@ def run_method_set(
     enforce_fixed_iterations: bool,
     *,
     verbose: bool,
+    experiment_cfg: dict | None = None,
+    run_metadata: dict | None = None,
 ) -> list[dict[str, Any]]:
     results = []
     best_error_so_far = float("inf")
     for method_name in selected_methods:
-        method_cfg = deepcopy(method_configs[make_valid_method_key(method_name)])
+        method_cfg = resolve_method_config(method_configs.get(make_valid_method_key(method_name), {}), experiment_cfg)
         if "LGHAM" in method_name.upper() and np.isfinite(best_error_so_far):
             method_cfg["best_error_so_far"] = best_error_so_far
         if verbose:
@@ -402,10 +351,11 @@ def run_method_set(
             conv_threshold,
             enforce_fixed_iterations=enforce_fixed_iterations,
             verbose=verbose,
+            run_metadata=run_metadata,
         )
         results.append(method_result)
         loss_curve = method_result.get("est_loss_hist", np.array([]))
-        if "LGHAM" not in method_name.upper() and method_result["status"] == "ok" and loss_curve.size:
+        if "LGHAM" not in method_name.upper() and method_result["status"] in {"converged", "max_iterations", "stalled"} and loss_curve.size:
             candidate_error = float(loss_curve[-1])
             if np.isfinite(candidate_error) and candidate_error < best_error_so_far:
                 best_error_so_far = candidate_error
@@ -423,28 +373,50 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
     final_param_estimates = np.full((n_methods, n_mc, n_params), np.nan)
     final_errors = np.full((n_methods, n_mc), np.nan)
     total_time_runs = np.full((n_methods, n_mc), np.nan)
+    statuses = np.full((n_methods, n_mc), "missing", dtype=object)
+    run_ids = np.full((n_methods, n_mc), "", dtype=object)
 
     for run_idx, run_results in enumerate(mc_runs):
         by_name = {result["name"]: result for result in run_results}
         for method_idx, method_name in enumerate(selected_methods):
             result = by_name[method_name]
-            param_err_runs[method_idx, run_idx, :] = pad_vector(result["param_err"], K_max)
-            rmse_runs[method_idx, run_idx, :] = pad_vector(result["rmse_hist"], K_max)
+            statuses[method_idx, run_idx] = result["status"]
+            run_ids[method_idx, run_idx] = result["run_metadata"]["run_id"]
+            if result["status"] in {"converged", "max_iterations", "stalled"}:
+                param_err_runs[method_idx, run_idx, :] = pad_vector(result["param_err"], K_max)
+                rmse_runs[method_idx, run_idx, :] = pad_vector(result["rmse_hist"], K_max)
             final_errors[method_idx, run_idx] = result["final_err"]
             total_time_runs[method_idx, run_idx] = result["total_time"]
-            if result["theta_hat"].size:
+            if result["status"] in {"converged", "max_iterations", "stalled"} and result["theta_hat"].size:
                 theta_hat = np.asarray(result["theta_hat"], dtype=float).reshape(-1)
                 final_param_estimates[method_idx, run_idx, :] = theta_hat
                 final_param_errors[method_idx, run_idx, :] = theta_hat - theta_true_np
 
+    def moments(values):
+        finite = np.isfinite(values)
+        count = finite.sum(axis=1)
+        mean = np.divide(np.where(finite, values, 0.).sum(axis=1), count,
+                         out=np.full(count.shape, np.nan), where=count > 0)
+        squares = np.where(finite, values-mean[:, None, :], 0.)**2
+        variance = np.divide(squares.sum(axis=1), count-1,
+                             out=np.full(count.shape, np.nan), where=count > 1)
+        stderr = np.sqrt(variance/np.maximum(count, 1))
+        return mean, stderr, count
+
+    param_mean, param_stderr, param_count = moments(param_err_runs)
+    rmse_mean, rmse_stderr, rmse_count = moments(rmse_runs)
     return {
+        "statuses": statuses,
+        "run_ids": run_ids,
         "method_names": np.asarray(selected_methods, dtype=object).reshape(1, -1),
         "param_err_runs": param_err_runs,
-        "param_err_mean": np.nanmean(param_err_runs, axis=1),
-        "param_err_stderr": np.nanstd(param_err_runs, axis=1, ddof=1) / np.sqrt(max(n_mc, 1)),
+        "param_err_mean": param_mean,
+        "param_err_stderr": param_stderr,
+        "param_err_count": param_count,
         "rmse_runs": rmse_runs,
-        "rmse_mean": np.nanmean(rmse_runs, axis=1),
-        "rmse_stderr": np.nanstd(rmse_runs, axis=1, ddof=1) / np.sqrt(max(n_mc, 1)),
+        "rmse_mean": rmse_mean,
+        "rmse_stderr": rmse_stderr,
+        "rmse_count": rmse_count,
         "final_param_errors": final_param_errors,
         "final_param_estimates": final_param_estimates,
         "final_errors": final_errors,
@@ -493,9 +465,11 @@ def main() -> None:
         conv_threshold,
         enforce_fixed_iterations,
         verbose=True,
+        experiment_cfg=exp_cfg, run_metadata={"data_seed": seed, "mc_index": 1, "experiment_name": experiment_name},
     )
 
     mc_summary = None
+    mc_runs = [results]
     if mode == "MONTECARLO":
         mc_runs = [results]
         for mc_idx in range(1, n_mc):
@@ -517,6 +491,7 @@ def main() -> None:
                     conv_threshold,
                     enforce_fixed_iterations,
                     verbose=False,
+                    experiment_cfg=exp_cfg, run_metadata={"data_seed": run_seed, "mc_index": mc_idx+1, "experiment_name": experiment_name},
                 )
             )
         mc_summary = summarize_montecarlo(mc_runs, selected_methods, theta_true, K_max)
@@ -553,7 +528,7 @@ def main() -> None:
             "nu": nu.detach().cpu().numpy().reshape(-1, 1),
             "c": c.detach().cpu().numpy().reshape(-1, 1),
         },
-        mc_summary=mc_summary,
+        mc_summary=mc_summary, all_runs=mc_runs, resolved_experiment=exp_cfg,
     )
 
     if make_local_plots:
