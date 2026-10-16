@@ -1,0 +1,128 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="gotham-algorithm" name="GOTHAM algorithm">
+    <mxGraphModel dx="3169" dy="1684" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1630" background="#FFFFFF" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#FFFFFF;fontColor=#233247;fontSize=24;align=center;verticalAlign=middle;spacing=8;text;strokeColor=none;fillColor=none;" value="$$\textbf{GOTHAM: iterative Wiener-system identification}$$" vertex="1">
+          <mxGeometry height="50" width="660" x="342" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="start" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#EFF6FC;fontColor=#233247;fontSize=20;align=center;verticalAlign=middle;spacing=8;ellipse;perimeter=ellipsePerimeter;" value="$$\text{Start}$$" vertex="1">
+          <mxGeometry height="60" width="200" x="600" y="95" as="geometry" />
+        </mxCell>
+        <mxCell id="model" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#FFFFFF;fontColor=#233247;fontSize=18;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$\begin{gathered}\text{Select model parametrization}\\[3pt]&lt;br&gt;\mathcal W_{\mathrm{PL}}^{(k)}(\theta)=\widehat\Phi^{(k)}\theta&lt;br&gt;\quad\text{or}\quad \mathcal W_{\mathrm{FSM}}(\theta)\end{gathered}$$" vertex="1">
+          <mxGeometry height="130" width="550" x="95" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="loss" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#FFFFFF;fontColor=#233247;fontSize=17;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$\begin{gathered}\text{Select matching loss functional}\\[3pt]&#xa;J_{\mathrm{PL}}^{(k)}(\theta)=\tfrac12\|C-\widehat\Phi^{(k)}\theta\|_2^2\\&#xa;J_{\nu,\mathrm{FSM}}(\theta)=\tfrac12\sum_t r_{\nu,\mathrm{FSM}}(t;\theta)^2&#xa;\end{gathered}$$" vertex="1">
+          <mxGeometry height="130" width="550" x="755" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="root" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#EFF6FC;fontColor=#233247;fontSize=19;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$\begin{gathered}\text{Choose inverse-problem formulation}\\[7pt]\begin{array}{ccc}\text{gradient-root}&amp;\text{or}&amp;\text{loss-root}\\[6pt]\mathcal N_{\mathrm G}(\theta)=\nabla_\theta J(\theta)&amp;\text{or}&amp;\mathcal N_{\mathrm L}(\theta)=J(\theta)-\varepsilon_0\end{array}\end{gathered}$$" vertex="1">
+          <mxGeometry height="150" width="740" x="330" y="431" as="geometry" />
+        </mxCell>
+        <mxCell id="zode" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#FFFFFF;fontColor=#233247;fontSize=19;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$\begin{gathered}\text{Set up the zero-order deformation equation}\\[5pt]&lt;br&gt;(1-q)\,\mathcal L\!\left(\phi(q)-\theta_0\right)&lt;br&gt;=q\,\hbar\,H\,\mathcal N\!\left(\phi(q)\right)\\[4pt]&lt;br&gt;\text{Choose }\mathcal L,\mathcal L^\dagger,H,\hbar,\widehat\theta^{(0)},M,K,\delta_{\mathrm{stop}}&lt;br&gt;\end{gathered}$$" vertex="1">
+          <mxGeometry height="155" width="850" x="275" y="640" as="geometry" />
+        </mxCell>
+        <mxCell id="init" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#EFF6FC;fontColor=#233247;fontSize=20;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$\begin{gathered}k\leftarrow0,\quad&#xa;\theta_0^{(k)}\leftarrow\widehat\theta^{(k)},\quad m\leftarrow1&#xa;\end{gathered}$$" vertex="1">
+          <mxGeometry height="75" width="550" x="425" y="845" as="geometry" />
+        </mxCell>
+        <mxCell id="outer_test" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#FFFDF5;fontColor=#233247;fontSize=18;align=center;verticalAlign=middle;spacing=8;rhombus;perimeter=rhombusPerimeter;" value="$$\begin{gathered}k\ge K\;\text{or}\\&#xa;\|N(\widehat\theta^{(k)})\|\le\delta_{\mathrm{stop}}\,?&#xa;\end{gathered}$$" vertex="1">
+          <mxGeometry height="150" width="390" x="505" y="975" as="geometry" />
+        </mxCell>
+        <mxCell id="finish" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#EFF6FC;fontColor=#233247;fontSize=18;align=center;verticalAlign=middle;spacing=8;ellipse;perimeter=ellipsePerimeter;" value="$$\begin{gathered}\text{Return}\\&#xa;\widehat\theta^{(k)}\end{gathered}$$" vertex="1">
+          <mxGeometry height="75" width="230" x="1080" y="1013" as="geometry" />
+        </mxCell>
+        <mxCell id="inner_test" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#FFFDF5;fontColor=#233247;fontSize=22;align=center;verticalAlign=middle;spacing=8;rhombus;perimeter=rhombusPerimeter;" value="$$m&gt;M\,?$$" vertex="1">
+          <mxGeometry height="140" width="380" x="510" y="1190" as="geometry" />
+        </mxCell>
+        <mxCell id="update" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#EFF6FC;fontColor=#233247;fontSize=17;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$\begin{gathered}\text{Update parameter estimate}\\[4pt]\widehat\theta^{(k+1)}\leftarrow&lt;br&gt;\sum_{j=0}^{M}\theta_j^{(k)}\\[4pt]&lt;br&gt;k\leftarrow k+1,\quad\theta_0^{(k)}\leftarrow\widehat\theta^{(k)},\quad m\leftarrow1&lt;br&gt;\end{gathered}$$" vertex="1">
+          <mxGeometry height="176" width="350" x="55" y="1172" as="geometry" />
+        </mxCell>
+        <mxCell id="hode" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#FFFFFF;fontColor=#233247;fontSize=18;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$\begin{gathered}\text{Solve the }m\text{-th HODE}\\[3pt]&lt;br&gt;R_m^{(k)}=\mathscr D_{m-1}\!\left(\mathcal N\!\left(\phi^{(k)}\right)\right)\\[3pt]&lt;br&gt;\theta_m^{(k)}=\chi_m\theta_{m-1}^{(k)}+&lt;br&gt;\mathcal L^\dagger\!\left(\hbar H R_m^{(k)}\right)&lt;br&gt;\end{gathered}$$" vertex="1">
+          <mxGeometry height="145" width="650" x="375" y="1400" as="geometry" />
+        </mxCell>
+        <mxCell id="increment" parent="1" style="whiteSpace=wrap;html=1;strokeColor=#233247;strokeWidth=2;fillColor=#EFF6FC;fontColor=#233247;fontSize=19;align=center;verticalAlign=middle;spacing=8;rounded=0;" value="$$m\leftarrow m+1$$" vertex="1">
+          <mxGeometry height="65" width="225" x="1085" y="1440" as="geometry" />
+        </mxCell>
+        <mxCell id="e_start_model" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="model" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="370" y="185" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_start_loss" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="loss" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1030" y="185" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_model_root" edge="1" parent="1" source="model" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="root" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="370" y="405" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_loss_root" edge="1" parent="1" source="loss" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="root" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1030" y="405" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_root_zode" edge="1" parent="1" source="root" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="zode" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_zode_init" edge="1" parent="1" source="zode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="init" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_init_outer" edge="1" parent="1" source="init" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="outer_test" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_outer_finish" edge="1" parent="1" source="outer_test" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#2563A6;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="finish" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;$$\text{yes}$$&lt;/font&gt;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_outer_inner" edge="1" parent="1" source="outer_test" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="inner_test" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_inner_update" edge="1" parent="1" source="inner_test" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#2563A6;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="update" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;$$\text{yes}$$&lt;/font&gt;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_inner_hode" edge="1" parent="1" source="inner_test" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="hode" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hode_increment" edge="1" parent="1" source="hode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#233247;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="increment" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_inner_loop" edge="1" parent="1" source="increment" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#2563A6;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="inner_test" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1230" y="1260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_outer_loop" edge="1" parent="1" source="update" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;strokeColor=#2563A6;strokeWidth=2;endArrow=block;endFill=1;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="outer_test" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="25" y="1260" />
+              <mxPoint x="25" y="1050" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="qlKskbJct7DivUKvz05p-1" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;font style=&quot;font-size: 18px; line-height: 100%;&quot;&gt;$$\text{no}$$&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="695" y="1140" as="geometry" />
+        </mxCell>
+        <mxCell id="qlKskbJct7DivUKvz05p-2" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;font style=&quot;font-size: 18px; line-height: 100%;&quot;&gt;$$\text{no}$$&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="700" y="1346" as="geometry" />
+        </mxCell>
+        <mxCell id="qlKskbJct7DivUKvz05p-3" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;font style=&quot;font-size: 18px; color: rgb(0, 102, 204);&quot;&gt;$$\text{Inner loop}$$&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="1120" y="1290" as="geometry" />
+        </mxCell>
+        <mxCell id="qlKskbJct7DivUKvz05p-4" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;font style=&quot;font-size: 18px; color: rgb(0, 102, 204);&quot;&gt;$$\text{Outer loop}$$&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="70" y="1070" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

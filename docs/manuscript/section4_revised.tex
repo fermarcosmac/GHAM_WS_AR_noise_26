@@ -1,0 +1,179 @@
+% Replacement for Section 4. Uses the manuscript's existing math/theorem packages.
+% The accompanying appendices preserve the detailed derivations and proofs.
+\section{GOTHAM for Wiener systems with AR output noise}
+\label{sec:GOTHAM_for_WS_AR_noise}
+
+This section specializes the operator formulation of
+Section~\ref{subsec:OHAM_reformulation} to the Wiener--AR model of
+Section~\ref{sec:problem_formulation}. Only the measured input $u$, the output
+record $C$, and reconstructed quantities enter the identification criteria;
+the true innovations are not available to the estimator. At each outer
+iteration, the current estimate initializes the homotopy and the first $M$
+deformation terms are summed according to
+\eqref{eq:NOHAM_iterative_update}. The explicit rules below cover both
+parametrizations, avoiding separate derivations for each configuration.
+
+\subsection{Identification criteria}
+\label{subsec:GOTHAM_PL_parametrization}
+\label{subsec:GOTHAM_FSM_parametrization}
+
+For the pseudo-linearized (PL) parametrization, the reconstructed regressor
+$\hat\Phi^{(k)}$ is fixed throughout the current homotopy construction:
+\begin{equation}
+\label{eq:WS_loss_k}
+    J_{\mathrm{PL}}^{(k)}(\theta)
+    =\frac12\|C-\hat\Phi^{(k)}\theta\|_2^2.
+\end{equation}
+Its gradient is affine and its Hessian is
+$G^{(k)}=\hat\Phi^{(k)\top}\hat\Phi^{(k)}$. The latent signals and regressor
+are reconstructed again before the next outer iteration.
+
+For the direct nonlinear FSM parametrization, let
+$\beta_{\mathrm{FSM}}(t;\theta)$ denote the signal-path reconstruction
+defined through the frequency-sampled impulse-response coefficients
+in~\eqref{eq:fsm_impulse_coefficients}. The criterion is
+\begin{align}
+\label{eq:FSM_innovation_residual_filter}
+    r_{\nu,\mathrm{FSM}}(t;\theta)
+    &=D(z^{-1};\theta)[c(t)-\beta_{\mathrm{FSM}}(t;\theta)],\\
+\label{eq:FSM_innovation_energy_loss}
+    J_{\nu,\mathrm{FSM}}(\theta)
+    &=\frac12\sum_{t=t_0}^{\tau}r_{\nu,\mathrm{FSM}}^2(t;\theta).
+\end{align}
+Both the signal path and the candidate AR polynomial are differentiated
+with respect to $\theta$; $t_0$ accounts for the chosen initialization or
+transient exclusion. This innovation-energy criterion avoids the algebraic
+cancellation obtained by reconstructing an innovation and passing it back
+through its matching noise filter; see
+Remark~\ref{rem:fsm_innovation_energy} and
+Appendix~\ref{app:fsm_innovation_energy}.
+
+Within one outer iteration, suppress the superscript $(k)$ and write
+$J$ for the selected criterion, $\hat\theta$ for the current estimate, and
+\begin{equation}
+\label{eq:GOTHAM_local_quantities}
+    g=\nabla J(\hat\theta),\qquad
+    Q=\nabla^2J(\hat\theta),\qquad
+    D_Q=\operatorname{diag}(\operatorname{diag}Q).
+\end{equation}
+Thus $Q=G^{(k)}$ for PL, whereas FSM uses the full nonlinear Hessian.
+In all configurations below, the HAM residual-space operator is $H=I$
+and $\hbar=-\eta$, with $\eta>0$.
+
+\subsection{Gradient-root updates and classical special cases}
+\label{subsec:GOTHAM_PL_gradient_root}
+\label{subsec:GOTHAM_update_summary}
+
+For $\mathcal N_G=\nabla J$, let $P=\mathcal L^\dagger$ be the fixed
+linear solution operator during the current homotopy construction.
+The first two corrections are
+\begin{equation}
+\label{eq:GOTHAM_common_gradient_corrections}
+    \theta_1=-\eta Pg,\qquad
+    \theta_2=\theta_1-\eta PQ\theta_1.
+\end{equation}
+Consequently, the order-one and order-two increments are
+$\Delta_1=\theta_1$ and $\Delta_2=\theta_1+\theta_2$, respectively, with
+$\hat\theta^{+}=\hat\theta+\Delta_M$.
+Table~\ref{tab:GOTHAM_update_rules} gives their explicit forms. These
+expressions hold for either criterion; higher homotopy orders generally
+require higher derivatives for FSM.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{7pt}
+\renewcommand{\arraystretch}{1.45}
+\caption{Gradient-root GOTHAM increments for either parametrization.
+The inverse symbols in this table denote Moore--Penrose inverses.
+For regularized operators, use the corresponding $P$ directly
+in~\eqref{eq:GOTHAM_common_gradient_corrections}.}
+\label{tab:GOTHAM_update_rules}
+\begin{tabular}{@{}ccl@{}}
+\toprule
+$M$ & $\mathcal L$ & Increment $\Delta_M$\\
+\midrule
+1 & $I$   & $-\eta g$\\
+1 & $Q$   & $-\eta Q^\dagger g$\\
+1 & $D_Q$ & $-\eta D_Q^\dagger g$\\
+\midrule
+2 & $I$   & $-(2\eta I-\eta^2Q)g$\\
+2 & $Q$   & $-(2\eta-\eta^2)Q^\dagger g$\\
+2 & $D_Q$ & $-D_Q^\dagger(2\eta g-\eta^2QD_Q^\dagger g)$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For PL, the first-order identity choice recovers the WS-GGI gradient
+update of~\cite{Lv2026}, with the step normalization absorbed into $\eta$.
+The first-order full-Hessian choice is the fixed-regressor
+Gauss--Newton update, denoted WS-GNI here. If $G^{(k)}$ is nonsingular
+and $\eta=1$, it gives the batch least-squares solution
+$(G^{(k)})^{-1}\hat\Phi^{(k)\top}C$. For FSM, the corresponding choices
+are gradient and Newton-type updates. The second-order full-Hessian
+row is a scaled first-order step for both parametrizations when the
+exact Moore--Penrose inverse is used. Proofs, the rank-deficient case,
+and the effect of regularization are given in
+Appendix~\ref{app:gotham_pl_updates}.
+
+\begin{remark}[Choice of auxiliary operator]
+The identity, diagonal, and full-Hessian choices trade computational cost
+against curvature information and conditioning. Regularization changes
+the update and can invalidate simplified equivalences in
+Table~\ref{tab:GOTHAM_update_rules}; an arbitrary Hessian shift also need
+not produce a descent direction when the FSM Hessian is indefinite.
+These choices and the convergence-control parameter must therefore be
+specified together.
+\end{remark}
+
+\subsection{Loss-root updates and the Polyak connection}
+\label{subsec:GOTHAM_PL_loss_root}
+
+For $\mathcal N_L=J-\varepsilon_0$, take
+$\mathcal Lh=g^\top h$. Its Moore--Penrose or Tikhonov solution
+operator is $s\mapsto v_\lambda s$, where
+\begin{equation}
+\label{eq:GOTHAM_common_loss_inverse}
+    v_\lambda=\frac{g}{\|g\|_2^2+\lambda}.
+\end{equation}
+Here $\lambda=0$ requires $g\ne0$, and $\lambda>0$ corresponds to
+a penalty $\lambda\|h\|_2^2$ in the linear subproblem. For either PL or
+FSM, the first three corrections are
+\begin{equation}
+\label{eq:GOTHAM_common_loss_corrections}
+\begin{aligned}
+    \theta_1&=-\eta v_\lambda[J(\hat\theta)-\varepsilon_0],\\
+    \theta_2&=\theta_1-\eta v_\lambda g^\top\theta_1,\\
+    \theta_3&=\theta_2-\eta v_\lambda
+       \left(g^\top\theta_2+\tfrac12\theta_1^\top Q\theta_1\right).
+\end{aligned}
+\end{equation}
+Summing the first $M$ terms gives the order-$M$ update, for $M=1,2,3$.
+With $M=1$, $\lambda=0$, and $\eta=1$, the step size is
+$[J(\hat\theta)-\varepsilon_0]/\|g\|_2^2$. It is the classical
+Polyak rule~\cite{Polyak1969} when $\varepsilon_0=J_\star$, the optimal
+loss value. A prescribed or estimated target gives a target-level variant;
+the same convergence guarantees do not follow merely from this algebraic
+similarity. The derivations and precise target conditions are given in
+Appendix~\ref{app:gotham_loss_updates}.
+
+\begin{remark}[Meaning of the loss target]
+An exact loss root requires an attainable level
+$\varepsilon_0\in J(\Theta)$; nonnegativity alone is insufficient.
+For $\varepsilon_0>J_\star$, attaining the target need not imply
+$g=0$ or a unique parameter estimate. Since the residual is scalar,
+its deformation equations are underdetermined when $n>1$, and the
+chosen inverse determines how the parameter correction is selected.
+\end{remark}
+
+\begin{remark}[Implementation and method names]
+For PL, the quadratic structure gives explicit residual coefficients.
+For FSM, automatic differentiation supplies the required derivatives
+without expanding the nested frequency-response and polynomial terms;
+see Appendix~\ref{app:gotham_fsm_updates}. In
+Section~\ref{sec:results}, GHAM and LHAM denote gradient-root and
+loss-root instances, the integer specifies $M$, and $I$, $H$, $dH$,
+and TIK identify the auxiliary operator or inversion strategy.
+The method-name suffix $H$ denotes a Hessian, whereas the HAM
+residual-space operator remains $H=I$ throughout this section.
+\end{remark}

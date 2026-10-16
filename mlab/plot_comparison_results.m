@@ -76,9 +76,11 @@ for i = 1:numel(datasets)
     filename = sprintf('parameter_trajectories_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
     export_if_requested(fig_params, fig_dir, filename, export_figures);
 
-    fig_output = plot_output_signals(datasets(i), method_names, colors, 300);
+    [fig_output, fig_error] = plot_output_signals(datasets(i), method_names, colors, 300);
     output_filename = sprintf('output_signals_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
     export_if_requested(fig_output, fig_dir, output_filename, export_figures);
+    error_filename = sprintf('output_errors_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
+    export_if_requested(fig_error, fig_dir, error_filename, export_figures);
 
     if isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
         fig_mc = plot_montecarlo_summary(datasets(i), method_names, colors);
@@ -606,16 +608,12 @@ end
 
 end
 
-function fig = plot_output_signals(dataset, method_names, colors, zoom_samples)
+function [fig, fig_error] = plot_output_signals(dataset, method_names, colors, zoom_samples)
 parametrization = dataset.parametrization;
 
 if isempty(dataset.example_data) || ~all(isfield(dataset.example_data, {'r', 'nu', 'c'}))
-    fig = figure('Name', sprintf('%s Output Signals', parametrization), ...
-        'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
-    ax = axes(fig);
-    text(ax, 0.5, 0.5, 'No saved output signal data available.', ...
-        'HorizontalAlignment', 'center', 'Units', 'normalized');
-    axis(ax, 'off');
+    fig = unavailable_output_figure(parametrization, 'Output Signals', 'No saved output signal data available.');
+    fig_error = unavailable_output_figure(parametrization, 'Output Errors', 'No saved output signal data available.');
     return;
 end
 
@@ -624,12 +622,8 @@ nu = double(dataset.example_data.nu(:));
 c = double(dataset.example_data.c(:));
 n_samples = min([zoom_samples, numel(r), numel(nu), numel(c)]);
 if n_samples == 0
-    fig = figure('Name', sprintf('%s Output Signals', parametrization), ...
-        'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
-    ax = axes(fig);
-    text(ax, 0.5, 0.5, 'Saved output signal data is empty.', ...
-        'HorizontalAlignment', 'center', 'Units', 'normalized');
-    axis(ax, 'off');
+    fig = unavailable_output_figure(parametrization, 'Output Signals', 'Saved output signal data is empty.');
+    fig_error = unavailable_output_figure(parametrization, 'Output Errors', 'Saved output signal data is empty.');
     return;
 end
 
@@ -675,6 +669,8 @@ if n_estimates == 0
     text(ax, 0.5, 0.5, 'No plottable estimated output signals available.', ...
         'HorizontalAlignment', 'center', 'Units', 'normalized');
     axis(ax, 'off');
+    fig_error = unavailable_output_figure(parametrization, 'Output Errors', ...
+        'No plottable estimated output signals available.');
     return;
 end
 
@@ -712,6 +708,35 @@ for idx = 1:n_estimates
 end
 
 linkaxes(axes_list, 'x');
+
+fig_error = figure('Name', sprintf('%s Output Errors', parametrization), ...
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
+ax_error = axes(fig_error);
+hold(ax_error, 'on');
+for idx = 1:n_estimates
+    squared_error = (c(1:n_samples) - estimate_signals{idx}).^2;
+    squared_error(squared_error == 0) = NaN; % Zero has no position on a log axis.
+    plot(ax_error, x, squared_error, ...
+        'Color', estimate_colors(idx, :), ...
+        'DisplayName', latex_label(estimate_labels{idx}));
+end
+set(ax_error, 'YScale', 'log');
+grid(ax_error, 'on');
+box(ax_error, 'on');
+xlim(ax_error, [1 n_samples]);
+xlabel(ax_error, 'Sample $t$');
+ylabel(ax_error, '$(c(t)-\hat{c}(t))^2$');
+title(ax_error, sprintf('%s Parametrization: Squared Output Errors', parametrization));
+legend(ax_error, 'Location', 'best', 'FontSize', 8);
+end
+
+function fig = unavailable_output_figure(parametrization, plot_name, message)
+fig = figure('Name', sprintf('%s %s', parametrization, plot_name), ...
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
+ax = axes(fig);
+text(ax, 0.5, 0.5, message, ...
+    'HorizontalAlignment', 'center', 'Units', 'normalized');
+axis(ax, 'off');
 end
 
 function tf = is_ok_result(result)
