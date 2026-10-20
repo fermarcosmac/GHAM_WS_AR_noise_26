@@ -497,9 +497,14 @@ plot_comparison_results(struct('data_files',{files}, ...
     'fig_dir',fullfile(pwd,'figs','local'),'export_figures',true));
 ```
 
-With no options, `plot_comparison_results` uses the configured default CSTR
-comparison paths and exports to `figs/`. For ordinary files, `experiment_name`
-alone does not switch those paths; provide `data_files`.
+With no options, `plot_comparison_results` uses the `experiment_name` and `mode`
+defaults near the top of the function and exports to `figs/`. It also discovers
+available `initialization_fsm.mat` / `initialization_pl.mat` files for that
+experiment and plots their final-parameter estimate boxplots and outcome counts.
+Use `options.experiment_name` to switch the experiment, `mode: INITIALIZATION`
+(or `study: initialization`) for study-only plots, or explicit `data_files` for
+an exact file selection. `include_initialization: false` disables automatic
+initialization discovery alongside ordinary comparisons.
 
 | Option | Purpose |
 | --- | --- |
@@ -507,7 +512,9 @@ alone does not switch those paths; provide `data_files`.
 | `fig_dir` | Export directory. |
 | `export_figures` | Export PDFs/CSV summaries (default true in the main plotter). |
 | `diagnostics_only` | Only optimizer-conditioning figures and summaries. |
-| `study`, `experiment_name` | Auto-discover standard initialization or record-length filenames. |
+| `experiment_name`, `mode` | Select standard experiment files; modes are `EXAMPLE`, `MONTECARLO`, or `INITIALIZATION`. |
+| `include_initialization` | Include available initialization-study files alongside ordinary comparisons (default true). |
+| `study` | Select only standard `initialization` or `record_length` study files. |
 
 Ordinary figures include parameter trajectories, estimation/reconstruction
 metrics, available output traces, Monte Carlo summaries, and final parameter-error

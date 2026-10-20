@@ -1,21 +1,37 @@
 function datasets = plot_comparison_results(options)
-% Optional data_files/fig_dir/export_figures/diagnostics_only overrides.
-%% Plot saved Wiener identification comparison results.
-%
-% Run python/comparison_torch.py and mlab/comparison.m first to generate:
-%   results/comparison_fsm.mat
-%   results/comparison_pl.mat
+% Optional experiment_name/mode/data_files/study/fig_dir/export_figures overrides.
+%% Plot saved Wiener identification comparisons and initialization studies.
+% Default selection includes available initialization files for the experiment.
+% Use include_initialization=false for comparisons only, or
+% study='initialization' for final-estimate boxplots and conditioning figures.
 
 if nargin < 1, options = struct(); end
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
 experiment_name = 'example_1';
-mode = 'MONTECARLO';  % EXAMPLE or MONTECARLO
-data_files = { ...
-    fullfile(repo_root, 'results', experiment_name, sprintf('comparison_fsm_%s.mat', lower(mode))), ...
-    fullfile(repo_root, 'results', experiment_name, sprintf('comparison_pl_%s.mat', lower(mode))) ...
-};
+mode = 'MONTECARLO';  % EXAMPLE, MONTECARLO, or INITIALIZATION
+experiment_name = char_value(get_option(options,'experiment_name',experiment_name));
+mode = upper(char_value(get_option(options,'mode',mode)));
+initialization_files = { ...
+    fullfile(repo_root,'results',experiment_name,'initialization_fsm.mat'), ...
+    fullfile(repo_root,'results',experiment_name,'initialization_pl.mat')};
+if strcmp(mode,'INITIALIZATION')
+    data_files = initialization_files;
+else
+    data_files = { ...
+        fullfile(repo_root,'results',experiment_name,sprintf('comparison_fsm_%s.mat',lower(mode))), ...
+        fullfile(repo_root,'results',experiment_name,sprintf('comparison_pl_%s.mat',lower(mode)))};
+    if ~isfield(options,'data_files') && ~isfield(options,'study') && ...
+            get_option(options,'include_initialization',true)
+        for k = 1:numel(initialization_files)
+            if exist(initialization_files{k},'file')==2
+                data_files{end+1} = initialization_files{k}; %#ok<AGROW>
+                fprintf('Including initialization results: %s\n',initialization_files{k});
+            end
+        end
+    end
+end
 export_figures = true;
 fig_dir = fullfile(repo_root, 'figs');
 if isfield(options,'data_files'), data_files = options.data_files; end
@@ -131,6 +147,11 @@ ds.generated_at = char_value(loaded.generated_at);
 ds.experiment = loaded.experiment;
 ds.study = struct();
 if isfield(loaded,'study'), ds.study = loaded.study; end
+% Earlier initialization payloads may identify the study only through mode.
+if ~isfield(ds.study,'type') && isfield(ds.experiment,'mode') && ...
+        strcmpi(char_value(ds.experiment.mode),'INITIALIZATION')
+    ds.study.type = 'initialization';
+end
 ds.all_runs = {};
 if isfield(loaded,'all_runs'), ds.all_runs = loaded.all_runs; end
 if isfield(loaded, 'example_data')
@@ -211,9 +232,12 @@ summary = dataset.mc_summary;
 theta_true = double(dataset.experiment.theta_true(:));
 param_labels = cellstr_value(dataset.experiment.param_labels);
 method_names = cellstr_value(summary.method_names);
-errors = double(summary.final_param_errors);
 initialization_study = isfield(dataset.study,'type') && strcmp(char_value(dataset.study.type),'initialization');
-if initialization_study, errors = double(summary.final_param_estimates); end
+if initialization_study
+    errors = double(summary.final_param_estimates);
+else
+    errors = double(summary.final_param_errors);
+end
 keep_idx = plottable_method_indices(dataset, method_names);
 if initialization_study, keep_idx = 1:numel(method_names); end
 method_names = method_names(keep_idx);
@@ -225,7 +249,10 @@ n_rows = ceil(n_params / n_cols);
 
 fig = figure('Name', sprintf('%s Monte Carlo Parameter Errors', dataset.parametrization), ...
     'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 22 6.4 * n_rows]);
-if initialization_study, fig.Position=[3 3 30 8.5*n_rows]; end
+if initialization_study
+    fig.Position=[3 3 30 8.5*n_rows];
+    fig.Name=[dataset.parametrization ' initialization final parameter estimates'];
+end
 tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 for p = 1:n_params
@@ -555,6 +582,20 @@ for i = 1:numel(datasets)
     for m = 1:numel(datasets(i).results)
         if is_plotted_result(datasets(i).results(m))
             methods{end + 1} = result_name(datasets(i).results(m)); %#ok<AGROW>
+        end
+    end
+end
+% Diagnostics retain partial failed runs and methods absent from the first
+% successful realization. Give every saved method a shared color as well.
+for i = 1:numel(datasets)
+    runs = datasets(i).all_runs;
+    if isempty(runs), runs = {datasets(i).results}; end
+    if ~iscell(runs), runs = {runs}; end
+    for r = 1:numel(runs)
+        results = runs{r};
+        if iscell(results), results = [results{:}]; end
+        for m = 1:numel(results)
+            methods{end+1} = result_name(results(m)); %#ok<AGROW>
         end
     end
 end

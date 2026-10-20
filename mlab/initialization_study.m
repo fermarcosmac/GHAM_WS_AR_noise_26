@@ -6,6 +6,6 @@ if nargin < 2, options = struct(); end
 payload = identification_study('initialization',experiment_name,options);
 end
 
-%experimentName = 'example_1';
+%experimentName = 'example_CSTR';
 %options = readstruct('configs\studies.json');
 %initialization_study(experimentName,options.initialization_study);

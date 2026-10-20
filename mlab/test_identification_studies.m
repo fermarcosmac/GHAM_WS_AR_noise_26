@@ -2,7 +2,9 @@ function test_identification_studies(fsm_initialization_file, fsm_record_file)
 % Small real-run, schema, and plot checks, with output confined to a temporary folder.
 if nargin<1, fsm_initialization_file=''; end
 if nargin<2, fsm_record_file=''; end
-root=fileparts(mfilename('fullpath')); folder=tempname(root); mkdir(folder);
+root=fileparts(mfilename('fullpath'));
+results_root=char(java.io.File(fullfile(root,'..','results')).getCanonicalPath());
+folder=tempname(results_root); mkdir(folder);
 cleanup=onCleanup(@()cleanup_test(folder)); %#ok<NASGU>
 visibility=get(groot,'defaultFigureVisible'); set(groot,'defaultFigureVisible','off');
 restore=onCleanup(@()set(groot,'defaultFigureVisible',visibility)); %#ok<NASGU>
@@ -34,9 +36,38 @@ for r=1:3
         assert(strcmp(p.all_runs{r}(m).run_metadata.run_id,again.all_runs{r}(m).run_metadata.run_id));
     end
 end
-plot_comparison_results(struct('data_files',{{options.output_file}},'export_figures',false));
+% A default experiment selection must also discover saved initialization data.
+% Exercise older payloads that carry INITIALIZATION mode but no study block.
+legacy=rmfield(p,'study');
+% Failure on realization one must not remove a method's diagnostic color.
+legacy.results(1).status='failed'; legacy.results(1).final_err=NaN;
+legacy.all_runs{1}(1).status='failed'; legacy.all_runs{1}(1).final_err=NaN;
+legacy.mc_summary.statuses{1,1}='failed';
+legacy.mc_summary.final_errors(1,1)=NaN;
+legacy.mc_summary.final_param_estimates(1,1,:)=NaN;
+legacy.mc_summary.final_param_errors(1,1,:)=NaN;
+save(fullfile(folder,'initialization_pl.mat'),'-struct','legacy','-v7');
+[~,experiment_tag]=fileparts(folder);
+plot_options=struct('experiment_name',experiment_tag,'export_figures',false);
+console=evalc('datasets=plot_comparison_results(plot_options);');
+assert(numel(datasets)==1 && strcmp(datasets.study.type,'initialization'));
+assert(contains(console,'Including initialization results:'));
 figs=findall(groot,'Type','figure');
 assert(any(contains(string({figs.Name}),'initialization outcomes')));
+boxes=figs(contains(string({figs.Name}),'initialization final parameter estimates'));
+assert(isscalar(boxes));
+charts=findall(boxes,'Type','boxchart');
+assert(numel(charts)==numel(p.experiment.theta_true));
+first_title=['$' p.experiment.param_labels{1} '$'];
+checked_first=false;
+for chart=charts.'
+    if strcmp(chart.Parent.Title.String,first_title)
+        checked_first=true;
+        expected=legacy.mc_summary.final_param_estimates(:,:,1);
+        assert(isequal(sort(chart.YData(:)),sort(expected(isfinite(expected)))));
+    end
+end
+assert(checked_first);
 close all;
 
 values=reshape([2 4 NaN],1,3,1);
@@ -74,6 +105,7 @@ end
 function cleanup_test(folder)
 close all;
 root=fileparts(mfilename('fullpath'));
-assert(strcmp(fileparts(folder),root),'Unexpected cleanup path.');
+results_root=char(java.io.File(fullfile(root,'..','results')).getCanonicalPath());
+assert(strcmp(fileparts(folder),results_root),'Unexpected cleanup path.');
 if exist(folder,'dir'), rmdir(folder,'s'); end
 end

@@ -93,7 +93,11 @@ plot_comparison_results(struct('study','initialization','experiment_name','examp
 ```
 
 One figure per parametrization shows **final parameter estimates**, grouped by
-optimizer, with a dashed line at each true parameter. Initialization plots keep
+optimizer, with a dashed line at each true parameter.
+An ordinary `plot_comparison_results` call also includes available initialization
+files for the selected experiment by default. Use `include_initialization: false`
+to disable this discovery; an explicit `data_files` selection is always respected.
+The boxplot window is named `<PL|FSM> initialization final parameter estimates`. Initialization plots keep
 the full range rather than clipping extreme finite outcomes. A separate stacked
 count figure reports converged, stalled, iteration-limited, failed, and skipped
 trials. Empty groups have no finite estimates. Finite stalled and iteration-limited
