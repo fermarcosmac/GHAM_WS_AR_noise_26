@@ -10,7 +10,7 @@ if nargin < 1, options = struct(); end
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
-experiment_name = 'example_CSTR';
+experiment_name = 'example_1';
 mode = 'MONTECARLO';  % EXAMPLE or MONTECARLO
 data_files = { ...
     fullfile(repo_root, 'results', experiment_name, sprintf('comparison_fsm_%s.mat', lower(mode))), ...
@@ -19,6 +19,13 @@ data_files = { ...
 export_figures = true;
 fig_dir = fullfile(repo_root, 'figs');
 if isfield(options,'data_files'), data_files = options.data_files; end
+if isfield(options,'study') && ~isfield(options,'data_files')
+    experiment_name = char_value(get_option(options,'experiment_name',experiment_name));
+    study_name = char_value(options.study);
+    assert(ismember(study_name,{'initialization','record_length'}),'Unknown study.');
+    data_files = {fullfile(repo_root,'results',experiment_name,[study_name '_fsm.mat']), ...
+                  fullfile(repo_root,'results',experiment_name,[study_name '_pl.mat'])};
+end
 if isfield(options,'fig_dir'), fig_dir = options.fig_dir; end
 if isfield(options,'export_figures'), export_figures = options.export_figures; end
 diagnostics_only = isfield(options,'diagnostics_only') && options.diagnostics_only;
@@ -33,12 +40,18 @@ set(groot, ...
     'defaultLineLineWidth', 1.55);
 
 datasets = struct([]);
+record_studies_loaded = false;
 for i = 1:numel(data_files)
     if exist(data_files{i}, 'file') ~= 2
         warning('Result file not found: %s', data_files{i});
         continue;
     end
     loaded = load(data_files{i});
+    if isfield(loaded,'study') && strcmp(char_value(loaded.study.type),'record_length')
+        plot_record_length_study(loaded,struct('fig_dir',fig_dir,'export_figures',export_figures));
+        record_studies_loaded = true;
+        continue;
+    end
     ds = normalize_loaded_dataset(loaded, data_files{i});
     if isempty(datasets)
         datasets = ds;
@@ -48,6 +61,7 @@ for i = 1:numel(data_files)
 end
 
 if isempty(datasets)
+    if record_studies_loaded, return; end
     error('No result files were loaded. Run the experiment scripts first.');
 end
 
@@ -67,6 +81,13 @@ for i = 1:numel(datasets)
     prefix = sprintf('%s_%s_%s',experiment_tag,mode_tag,parametrization_tag);
     plot_optimization_diagnostics(datasets(i),fig_dir,prefix,export_figures,method_names,colors);
     if diagnostics_only, continue; end
+    if isfield(datasets(i).study,'type') && strcmp(char_value(datasets(i).study.type),'initialization')
+        fig_box = plot_montecarlo_boxplots(datasets(i));
+        export_if_requested(fig_box,fig_dir,['initialization_parameter_boxplots_' prefix '.pdf'],export_figures);
+        fig_status = plot_initialization_outcomes(datasets(i));
+        export_if_requested(fig_status,fig_dir,['initialization_outcomes_' prefix '.pdf'],export_figures);
+        continue;
+    end
 
     fig_metrics = plot_metric_summary(datasets(i), method_names, colors);
     metrics_filename = sprintf('comparison_metrics_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
@@ -108,6 +129,8 @@ ds.file = file_name;
 ds.parametrization = char_value(loaded.parametrization);
 ds.generated_at = char_value(loaded.generated_at);
 ds.experiment = loaded.experiment;
+ds.study = struct();
+if isfield(loaded,'study'), ds.study = loaded.study; end
 ds.all_runs = {};
 if isfield(loaded,'all_runs'), ds.all_runs = loaded.all_runs; end
 if isfield(loaded, 'example_data')
@@ -189,7 +212,10 @@ theta_true = double(dataset.experiment.theta_true(:));
 param_labels = cellstr_value(dataset.experiment.param_labels);
 method_names = cellstr_value(summary.method_names);
 errors = double(summary.final_param_errors);
+initialization_study = isfield(dataset.study,'type') && strcmp(char_value(dataset.study.type),'initialization');
+if initialization_study, errors = double(summary.final_param_estimates); end
 keep_idx = plottable_method_indices(dataset, method_names);
+if initialization_study, keep_idx = 1:numel(method_names); end
 method_names = method_names(keep_idx);
 method_labels = display_method_labels(method_names, dataset.parametrization);
 errors = errors(keep_idx, :, :);
@@ -199,22 +225,43 @@ n_rows = ceil(n_params / n_cols);
 
 fig = figure('Name', sprintf('%s Monte Carlo Parameter Errors', dataset.parametrization), ...
     'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 22 6.4 * n_rows]);
+if initialization_study, fig.Position=[3 3 30 8.5*n_rows]; end
 tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 for p = 1:n_params
     ax = nexttile(tl);
-    values = squeeze(errors(:, :, p)).';
-    boxplot(ax, values, 'Labels', method_labels, 'LabelOrientation', 'inline');
-    yline(ax, 0, 'k--', 'LineWidth', 1.0);
+    values = reshape(errors(:,:,p),numel(method_names),[]).';
+    if any(isfinite(values),'all')
+        if initialization_study
+            groups=repmat(1:numel(method_names),size(values,1),1);
+            keep=isfinite(values);
+            boxchart(ax,groups(keep),values(keep),'BoxFaceColor',[.2 .45 .7]);
+        else
+            boxplot(ax, values, 'Labels', method_labels, 'LabelOrientation', 'inline');
+        end
+    else
+        text(ax,.5,.5,'No finite estimates','Units','normalized','HorizontalAlignment','center');
+        xticks(ax,1:numel(method_labels)); xticklabels(ax,method_labels);
+    end
+    if initialization_study
+        xticks(ax,1:numel(method_labels)); xticklabels(ax,method_labels); xtickangle(ax,40);
+        xlim(ax,[.5 numel(method_labels)+.5]);
+        set(ax,'TickLabelInterpreter','none','FontSize',8);
+    end
+    reference = 0;
+    if initialization_study, reference = theta_true(p); end
+    yline(ax, reference, 'k--', 'LineWidth', 1.0);
     grid(ax, 'on');
     box(ax, 'on');
     ylabel(ax, '$\hat{\theta}-\theta^\star$');
+    if initialization_study, ylabel(ax,'Final parameter estimate'); end
     if p <= numel(param_labels)
         title(ax, sprintf('$%s$ final error', param_labels{p}));
+        if initialization_study, title(ax,sprintf('$%s$',param_labels{p})); end
     else
         title(ax, sprintf('$\\theta_%d$ final error', p));
     end
-    ylim(ax, robust_axis_limits(values(:), 0));
+    if ~initialization_study, ylim(ax, robust_axis_limits(values(:), 0)); end
 end
 
 for p = (n_params + 1):(n_rows * n_cols)
@@ -222,6 +269,30 @@ for p = (n_params + 1):(n_rows * n_cols)
 end
 
 title(tl, sprintf('%s Parametrization: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold', 'FontSize', 11);
+if initialization_study
+    title(tl,sprintf('%s: final estimates over %d initializations; fixed input/noise; dashed = truth', ...
+        dataset.parametrization,size(errors,2)),'Interpreter','none');
+end
+end
+
+function fig = plot_initialization_outcomes(dataset)
+states = string(dataset.mc_summary.statuses);
+names = cellstr_value(dataset.mc_summary.method_names);
+labels = {'converged','stalled','max_iterations','failed / invalid','skipped'};
+counts = [sum(states=="converged",2),sum(states=="stalled",2),sum(states=="max_iterations",2), ...
+    sum(~ismember(states,["converged","stalled","max_iterations","ok","skipped"]),2),sum(states=="skipped",2)];
+fig = figure('Color','w','Name',[dataset.parametrization ' initialization outcomes'], ...
+    'Units','centimeters','Position',[3 3 26 14]);
+ax = axes(fig); bar(ax,counts,'stacked');
+xticks(ax,1:numel(names));
+xticklabels(ax,cellfun(@method_figure_label,names,'UniformOutput',false)); xtickangle(ax,35);
+ax.TickLabelInterpreter = 'none'; ylabel(ax,'Number of initializations');
+legend(ax,labels,'Interpreter','none','Location','best'); grid(ax,'on');
+title(ax,'Boxplots include finite outcomes; failed and skipped runs have no estimate','Interpreter','none');
+end
+
+function value = get_option(options,key,default)
+if isfield(options,key), value=options.(key); else, value=default; end
 end
 
 function fig = plot_montecarlo_final_error_boxplots(dataset)
@@ -973,15 +1044,8 @@ function label = display_method_label(method_name, parametrization)
 if nargin < 2
     parametrization = '';
 end
-label = char_value(method_name);
+label = method_figure_label(char_value(method_name));
 label = strrep(label, 'RGLS', 'RLS');
-label = strrep(label, 'GGHAM', 'GGOTHAM');
-label = strrep(label, 'LGHAM', 'LGOTHAM');
-label = strrep(label, 'LHAM', 'LGOTHAM');
-label = strrep(label, 'GHAM', 'GGOTHAM');
-if contains(label, 'HAM')
-    label = regexprep(label, '^WS-', '');
-end
 if strcmpi(char_value(parametrization), 'FSM')
     if strcmp(label, 'WS-GNI')
         label = 'Newton';

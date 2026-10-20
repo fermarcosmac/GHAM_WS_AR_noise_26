@@ -76,7 +76,7 @@ for m = 1:numel(names)
     assert(~isempty(color_idx),'Missing diagnostic color for method %s.',names{m});
     color = method_colors(color_idx,:);
     method_handles(end+1) = plot(axes_list(1),NaN,NaN,'Color',color,'LineWidth',1.6); %#ok<AGROW>
-    labels{end+1} = names{m}; %#ok<AGROW>
+    labels{end+1} = method_figure_label(names{m}); %#ok<AGROW>
     draw_band(axes_list(1),history_matrix(selected,'est_loss_hist'),color,names{m},'-');
     condition_styles(1) = draw_band(axes_list(2),diagnostic_matrix(selected,'raw_condition'),color,names{m},'-') || condition_styles(1);
     draw_band(axes_list(3),diagnostic_matrix(selected,'solver_condition'),color,names{m},'-');
@@ -155,7 +155,7 @@ for k = 1:numel(med)
 end
 x = 0:numel(med)-1;
 fill(ax,[x fliplr(x)],[lo fliplr(hi)],color,'FaceAlpha',.07,'EdgeColor','none','HandleVisibility','off');
-plot(ax,x,med,'Color',color,'DisplayName',label,'LineStyle',style,'LineWidth',1.5,'HandleVisibility','off');
+plot(ax,x,med,'Color',color,'DisplayName',method_figure_label(label),'LineStyle',style,'LineWidth',1.5,'HandleVisibility','off');
 end
 
 function value = percentile(sorted,p)

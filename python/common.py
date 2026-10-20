@@ -116,6 +116,15 @@ def print_iteration_table(
         print(f"{iter_num:<6d}  {theta_vals}  {float(param_err[idx]):<10.5f}  {time_val:<10.5f}")
 
 
+def method_figure_label(method_name: str) -> str:
+    """Use paper acronyms without changing stored optimizer identifiers."""
+    label = str(method_name)
+    for original, replacement in (("GGOTHAM", "GHAM"), ("GGHAM", "GHAM"),
+                                  ("LGOTHAM", "LHAM"), ("LGHAM", "LHAM")):
+        label = label.replace(original, replacement)
+    return label.removeprefix("WS-") if "HAM" in label else label
+
+
 def plot_method_metrics(results: list[dict[str, Any]]) -> None:
     valid_results = [res for res in results if res["status"] in {"ok", "converged", "max_iterations", "stalled"}]
     if not valid_results:
@@ -127,10 +136,10 @@ def plot_method_metrics(results: list[dict[str, Any]]) -> None:
 
     for color, result in zip(colors, valid_results):
         iter_axis = np.arange(result["iterations"], dtype=float)
-        axes[0].plot(iter_axis, np.maximum(result["param_err"], np.finfo(float).eps), color=color, lw=1.6, label=result["name"])
-        axes[1].plot(result["cum_time"], np.maximum(result["param_err"], np.finfo(float).eps), color=color, lw=1.6, label=result["name"])
-        axes[2].plot(iter_axis, np.maximum(result["rmse_hist"], np.finfo(float).eps), color=color, lw=1.6, label=result["name"])
-        axes[3].plot(result["cum_time"], np.maximum(result["rmse_hist"], np.finfo(float).eps), color=color, lw=1.6, label=result["name"])
+        axes[0].plot(iter_axis, np.maximum(result["param_err"], np.finfo(float).eps), color=color, lw=1.6, label=method_figure_label(result["name"]))
+        axes[1].plot(result["cum_time"], np.maximum(result["param_err"], np.finfo(float).eps), color=color, lw=1.6, label=method_figure_label(result["name"]))
+        axes[2].plot(iter_axis, np.maximum(result["rmse_hist"], np.finfo(float).eps), color=color, lw=1.6, label=method_figure_label(result["name"]))
+        axes[3].plot(result["cum_time"], np.maximum(result["rmse_hist"], np.finfo(float).eps), color=color, lw=1.6, label=method_figure_label(result["name"]))
 
     axes[0].set_title("Parameter Error vs Iteration")
     axes[1].set_title("Parameter Error vs Compute Time")
@@ -172,7 +181,7 @@ def plot_parameter_trajectories(results: list[dict[str, Any]], theta_true: np.nd
         ax = axes[idx]
         for color, result in zip(colors, valid_results):
             iter_axis = np.arange(result["iterations"], dtype=float)
-            ax.plot(iter_axis, result["theta_hist"][idx, :], color=color, lw=1.4, label=result["name"])
+            ax.plot(iter_axis, result["theta_hist"][idx, :], color=color, lw=1.4, label=method_figure_label(result["name"]))
         ax.axhline(theta_true[idx], color="k", ls="--", lw=1.0, label="True")
         ax.set_title(f"Parameter {param_labels[idx]}")
         ax.set_xlabel("Iteration")

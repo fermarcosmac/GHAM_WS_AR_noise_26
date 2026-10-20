@@ -66,6 +66,7 @@ def save_comparison_results(
     mc_summary: dict[str, Any] | None = None,
     all_runs: list | None = None,
     resolved_experiment: dict | None = None,
+    study: dict | None = None,
 ) -> None:
     try:
         from scipy.io import savemat
@@ -117,6 +118,8 @@ def save_comparison_results(
         payload["example_data"] = example_data
     if mc_summary is not None:
         payload["mc_summary"] = mc_summary
+    if study is not None:
+        payload["study"] = study
 
     cells = np.empty((1, len(all_runs or [results])), dtype=object)
     for idx, run in enumerate(all_runs or [results]):
@@ -132,6 +135,7 @@ def run_identification_method(
     lambda_g: int, K_max: int, conv_threshold: float, *,
     enforce_fixed_iterations: bool = False, verbose: bool = True,
     run_metadata: dict | None = None,
+    progress_callback=None,
 ) -> dict[str, Any]:
     if K_max < 1 or conv_threshold < 0:
         raise ValueError("K_max must be positive and conv_threshold nonnegative")
@@ -241,6 +245,10 @@ def run_identification_method(
             elapsed = max(0., now()-t0-step_diag_time)
             history["iter_time"][-1] = elapsed
             history["cum_time"][-1] += elapsed
+            if progress_callback is not None:
+                progress_callback({"phase": "iteration", "method": method_name, "iteration": k,
+                                   "max_updates": K_max-1, "record_length": lambda_g,
+                                   "run_metadata": run_metadata or {}})
             if small_step:
                 break
     wall_time = now()-start_time
@@ -327,10 +335,15 @@ def run_method_set(
     verbose: bool,
     experiment_cfg: dict | None = None,
     run_metadata: dict | None = None,
+    progress_callback=None,
 ) -> list[dict[str, Any]]:
     results = []
     best_error_so_far = float("inf")
     for method_name in selected_methods:
+        progress_event = {"method": method_name, "record_length": lambda_g,
+                          "max_updates": K_max-1, "run_metadata": run_metadata or {}}
+        if progress_callback is not None:
+            progress_callback({**progress_event, "phase": "method_start"})
         method_cfg = resolve_method_config(method_configs.get(make_valid_method_key(method_name), {}), experiment_cfg)
         if "LGHAM" in method_name.upper() and np.isfinite(best_error_so_far):
             method_cfg["best_error_so_far"] = best_error_so_far
@@ -352,7 +365,11 @@ def run_method_set(
             enforce_fixed_iterations=enforce_fixed_iterations,
             verbose=verbose,
             run_metadata=run_metadata,
+            progress_callback=progress_callback,
         )
+        if progress_callback is not None:
+            progress_callback({**progress_event, "phase": "method_end",
+                               "iteration": method_result["accepted_updates"], "status": method_result["status"]})
         results.append(method_result)
         loss_curve = method_result.get("est_loss_hist", np.array([]))
         if "LGHAM" not in method_name.upper() and method_result["status"] in {"converged", "max_iterations", "stalled"} and loss_curve.size:

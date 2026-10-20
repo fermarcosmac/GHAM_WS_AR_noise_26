@@ -8,6 +8,8 @@ function payload = comparison(experiment_cfg, options)
 % experiment loop.
 
 if nargin < 2, options = struct(); end
+verbose = get_optional_field(options, 'verbose', true);
+progress_callback = get_optional_field(options, 'progress_callback', []);
 script_dir = fileparts(mfilename('fullpath'));
 
 %% 0. Experiment configuration
@@ -51,7 +53,19 @@ enforce_fixed_iterations = get_optional_field(settings, 'enforce_fixed_iteration
 
 %% 3. Generate input / noise / true output
 rng(seed);
-[r, nu, c] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
+data_runs = get_optional_field(options, 'data_runs', {});
+if ~isempty(data_runs)
+    assert(numel(data_runs)==N_MC || strcmp(mode,'EXAMPLE'), 'data_runs must match N_MC.');
+    r = data_runs{1}.r(:); nu = data_runs{1}.nu(:); c = data_runs{1}.c(:);
+    assert(numel(r)==lambda_g && numel(c)==lambda_g && numel(nu)==lambda_g, 'Wrong data length.');
+else
+    [r, nu, c] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
+end
+initializations = get_optional_field(options, 'initializations', []);
+if strcmp(mode,'INITIALIZATION')
+    assert(isequal(size(initializations),[n N_MC]), 'initializations must be n_params by N_MC.');
+    experiment_cfg.initialization = struct('policy','consistent','theta0',initializations(:,1));
+end
 
 %% 4. Load optimization configs
 method_configs = load_method_configs(config_file);
@@ -59,27 +73,39 @@ method_configs = get_optional_field(options, 'method_configs', method_configs);
 
 %% 5. Run selected methods
 results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, ...
-    na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, true, experiment_cfg, ...
-    struct('data_seed', seed, 'mc_index', 1, 'experiment_name', experiment_name));
+    na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, verbose, experiment_cfg, ...
+    struct('data_seed', seed, 'mc_index', 1, 'experiment_name', experiment_name), progress_callback);
 
 mc_summary = [];
 mc_runs = {results};
-if strcmp(mode, 'MONTECARLO')
+if ismember(mode, {'MONTECARLO','INITIALIZATION'})
     mc_runs = cell(N_MC, 1);
     mc_runs{1} = results;
     for mc = 2:N_MC
         run_seed = seed + mc - 1;
-        fprintf('\nMonte Carlo run %d/%d (seed %d)\n', mc, N_MC, run_seed);
-        rng(run_seed);
-        [r_mc, nu_mc, c_mc] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
+        if verbose, fprintf('\n%s run %d/%d\n', mode, mc, N_MC); end
+        if strcmp(mode,'INITIALIZATION')
+            r_mc = r; nu_mc = nu; c_mc = c; run_seed = seed;
+            experiment_cfg.initialization.theta0 = initializations(:,mc);
+        elseif ~isempty(data_runs)
+            r_mc = data_runs{mc}.r(:); nu_mc = data_runs{mc}.nu(:); c_mc = data_runs{mc}.c(:);
+        else
+            rng(run_seed);
+            [r_mc, nu_mc, c_mc] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
+        end
+        assert(numel(r_mc)==lambda_g && numel(c_mc)==lambda_g && numel(nu_mc)==lambda_g, 'Wrong data length.');
         mc_runs{mc} = run_method_set(selected_methods, method_configs, r_mc, nu_mc, c_mc, theta_true, ...
             na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, false, experiment_cfg, ...
-            struct('data_seed', run_seed, 'mc_index', mc, 'experiment_name', experiment_name));
+            struct('data_seed', run_seed, 'mc_index', mc, 'experiment_name', experiment_name), progress_callback);
+    end
+    if ~isempty(progress_callback)
+        progress_callback(struct('phase','stage','message','Summarizing comparison results'));
     end
     mc_summary = summarize_montecarlo(mc_runs, selected_methods, theta_true, K_max);
 end
 
 %% 6. Summary table
+if verbose
 fprintf('\n%s\n', repmat('=', 1, 92));
 fprintf('FINAL METHOD SUMMARY\n');
 fprintf('%s\n', repmat('=', 1, 92));
@@ -95,18 +121,20 @@ for m = 1:numel(results)
         results(m).name, results(m).status, results(m).final_err, ...
         final_d, results(m).total_time);
 end
+end
 
 %% 7. Plots
 payload = save_comparison_results(results_file, results, selected_methods, ...
     na, nb, nf, nd, theta_true, param_names, param_labels, ...
     lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, ...
-    experiment_name, mode, seed, N_MC, struct('r', r, 'nu', nu, 'c', c), mc_summary, mc_runs, experiment_cfg);
+    experiment_name, mode, seed, N_MC, struct('r', r, 'nu', nu, 'c', c), mc_summary, mc_runs, experiment_cfg, ...
+    get_optional_field(options,'save_results',true));
 
 if make_local_plots
     plot_method_metrics(results);
     plot_parameter_trajectories(results, theta_true, param_labels);
     fprintf('\nDone. Results saved and local figures generated.\n');
-else
+elseif verbose
     fprintf('\nDone. Results saved for MATLAB plotting.\n');
 end
 
@@ -114,11 +142,12 @@ end
 end
 
 %% Local functions
-function results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, verbose, experiment_cfg, metadata)
+function results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, verbose, experiment_cfg, metadata, progress_callback)
 results = [];
 best_error_so_far = Inf;
 for m = 1:numel(selected_methods)
     name = selected_methods{m};
+    emit_progress(progress_callback,'method_start',name,metadata,lambda_g,K_max-1,0,'');
     cfg = struct();
     if has_method_config(method_configs, name), cfg = get_method_config(method_configs, name); end
     if isfield(experiment_cfg, 'initialization'), cfg.initialization = experiment_cfg.initialization; end
@@ -144,7 +173,8 @@ for m = 1:numel(selected_methods)
         cfg.resolved_epsilon0 = get_eps0(cfg);
     end
     result = run_identification_method(name, cfg, r, nu, c, theta_true, ...
-        na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose, metadata);
+        na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose, metadata, progress_callback);
+    emit_progress(progress_callback,'method_end',name,metadata,lambda_g,K_max-1,result.accepted_updates,result.status);
     best_error_so_far = result.best_error_so_far;
     if isempty(results), results = result; else, results(end+1) = result; end %#ok<AGROW>
 end
@@ -256,7 +286,7 @@ end
 cells = cells(:).';
 end
 
-function result = run_identification_method(method_name, cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose, metadata)
+function result = run_identification_method(method_name, cfg, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, best_error_so_far, verbose, metadata, progress_callback)
 assert(K_max >= 1 && conv_threshold >= 0, 'Invalid iteration settings.');
 init = initialize_method_state(cfg, r, c, na, nb, nf, nd, lambda_g, numel(theta_true));
 theta = init.theta_hat;
@@ -337,6 +367,7 @@ for k = 1:(K_max-1)
     rel_change(end+1,1) = change; active_mask(end+1,1) = true; %#ok<AGROW>
     iter_time(end+1,1) = max(0,toc(t_iter)-step_diagnostic_time); %#ok<AGROW>
     cum_time(end+1,1) = cum_time(end)+iter_time(end); %#ok<AGROW>
+    emit_progress(progress_callback,'iteration',method_name,metadata,lambda_g,K_max-1,k,'');
 end
 wall_time = toc(t_start);
 valid = ismember(status,{'converged','stalled','max_iterations'});
@@ -368,6 +399,12 @@ result = struct('name',method_name,'status',status,'status_msg',status_msg, ...
     'rmse_definition','true_innovation_reconstruction','diagnostics',diagnostics, ...
     'diagnostic_summary',summarize_optimization_diagnostics(diagnostics),'derivative_snapshots',{snapshots});
 if verbose, fprintf('%s: %s; %d accepted updates. %s\n',method_name,status,accepted,status_msg); end
+end
+
+function emit_progress(callback,phase,method,metadata,length,max_updates,iteration,status)
+if isempty(callback), return; end
+callback(struct('phase',phase,'method',method,'metadata',metadata,'record_length',length, ...
+    'max_updates',max_updates,'iteration',iteration,'status',status));
 end
 
 function [row, snapshot] = pl_step_diagnostics(name,cfg,Phi,c,theta,candidate,aux,iteration)
@@ -972,9 +1009,9 @@ labels = [arrayfun(@(i) sprintf('a_%d', i), 1:na, 'UniformOutput', false), ...
           arrayfun(@(i) sprintf('d_%d', i), 1:nd, 'UniformOutput', false)];
 end
 
-function payload = save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, experiment_name, mode, seed, N_MC, example_data, mc_summary, all_runs, resolved_experiment)
+function payload = save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, experiment_name, mode, seed, N_MC, example_data, mc_summary, all_runs, resolved_experiment, save_results)
 out_dir = fileparts(output_file);
-if ~exist(out_dir, 'dir')
+if save_results && ~isempty(out_dir) && ~exist(out_dir, 'dir')
     mkdir(out_dir);
 end
 
@@ -1003,8 +1040,10 @@ resolved_experiment_json = jsonencode(resolved_experiment);
 payload = struct('parametrization',parametrization,'generated_at',generated_at, ...
     'experiment',experiment,'results',results,'example_data',example_data,'mc_summary',mc_summary, ...
     'all_runs',{all_runs},'schema_version',schema_version,'resolved_experiment_json',resolved_experiment_json);
-save(output_file,'-struct','payload','-v7');
-fprintf('\nSaved PL results to: %s\n', output_file);
+if save_results
+    save(output_file,'-struct','payload','-v7');
+    fprintf('\nSaved PL results to: %s\n', output_file);
+end
 end
 
 function plot_method_metrics(results)
@@ -1024,7 +1063,7 @@ for j = 1:numel(valid_idx)
     iter_axis = 0:(results(idx).iterations - 1);
     y_param_err = max(results(idx).param_err, eps);
     plot(iter_axis, y_param_err, 'LineWidth', 1.6, ...
-        'Color', colors(j, :), 'DisplayName', results(idx).name);
+        'Color', colors(j, :), 'DisplayName', method_figure_label(results(idx).name));
 end
 set(gca, 'YScale', 'log');
 grid on; box on; xlabel('Iteration'); ylabel('err (%)');
@@ -1035,7 +1074,7 @@ for j = 1:numel(valid_idx)
     idx = valid_idx(j);
     y_param_err = max(results(idx).param_err, eps);
     plot(results(idx).cum_time, y_param_err, 'LineWidth', 1.6, ...
-        'Color', colors(j, :), 'DisplayName', results(idx).name);
+        'Color', colors(j, :), 'DisplayName', method_figure_label(results(idx).name));
 end
 set(gca, 'YScale', 'log');
 grid on; box on; xlabel('Compute time (s)'); ylabel('err (%)');
@@ -1047,7 +1086,7 @@ for j = 1:numel(valid_idx)
     iter_axis = 0:(results(idx).iterations - 1);
     y_rmse = max(results(idx).RMSE_hist, eps);
     plot(iter_axis, y_rmse, 'LineWidth', 1.6, ...
-        'Color', colors(j, :), 'DisplayName', results(idx).name);
+        'Color', colors(j, :), 'DisplayName', method_figure_label(results(idx).name));
 end
 set(gca, 'YScale', 'log');
 grid on; box on; xlabel('Iteration'); ylabel('RMSE');
@@ -1058,7 +1097,7 @@ for j = 1:numel(valid_idx)
     idx = valid_idx(j);
     y_rmse = max(results(idx).RMSE_hist, eps);
     plot(results(idx).cum_time, y_rmse, 'LineWidth', 1.6, ...
-        'Color', colors(j, :), 'DisplayName', results(idx).name);
+        'Color', colors(j, :), 'DisplayName', method_figure_label(results(idx).name));
 end
 set(gca, 'YScale', 'log');
 grid on; box on; xlabel('Compute time (s)'); ylabel('RMSE');
@@ -1083,7 +1122,7 @@ for i = 1:n
         idx = valid_idx(j);
         iter_axis = 0:(results(idx).iterations - 1);
         plot(iter_axis, results(idx).theta_hist(i, :), ...
-            'LineWidth', 1.4, 'Color', colors(j, :), 'DisplayName', results(idx).name);
+            'LineWidth', 1.4, 'Color', colors(j, :), 'DisplayName', method_figure_label(results(idx).name));
     end
     yline(theta_true(i), 'k--', 'LineWidth', 1.1, 'DisplayName', 'True');
     grid on; box on;

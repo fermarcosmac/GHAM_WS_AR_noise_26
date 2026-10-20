@@ -1,7 +1,8 @@
 # Comparison initialization, outcomes, and diagnostics
 
-This implements the first two resubmission preparation steps. It adds no new
-estimators, initialization/noise sweeps, or hypothesis tests. Existing result
+This describes the first two resubmission preparation steps. Separate
+[initialization and record-length runners](identification_studies.md) extend
+the harness without changing its optimizer update rules. Existing result
 files do not acquire diagnostics retroactively; generate new files to obtain them.
 
 ## Configuration

@@ -1,0 +1,27 @@
+{
+  "initialization_study": {
+    "n_runs": 30,
+    "progress": true,
+    "progress_interval_seconds": 10,
+    "initialization_seed": 314159,
+    "distribution": "uniform",
+    "center": null,
+    "scale": 0.5,
+    "stability_radius": 0.95,
+    "max_draws": 100000
+  },
+  "record_length_study": {
+    "n_runs": 100,
+    "progress": true,
+    "progress_interval_seconds": 10,
+    "data_seed": 271828,
+    "record_lengths": [500, 1000, 2000, 5000, 10000],
+    "theta0": null,
+    "summary_population": "finite",
+    "save_case_results": false,
+    "fsm_resolutions": [
+      {"label": "fsm_128", "fsm_tau_g": 128, "fsm_tau_h": 128, "fsm_n_freq": 1024},
+      {"label": "fsm_256", "fsm_tau_g": 256, "fsm_tau_h": 256, "fsm_n_freq": 2048}
+    ]
+  }
+}

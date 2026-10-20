@@ -12,7 +12,7 @@ from tqdm import tqdm
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from common import ROOT as PY_ROOT, build_param_names, build_plot_labels, choose_dtype, default_device, load_json_config, make_valid_method_key, now, print_iteration_table, set_seed
+from common import ROOT as PY_ROOT, build_param_names, build_plot_labels, choose_dtype, default_device, load_json_config, make_valid_method_key, method_figure_label, now, print_iteration_table, set_seed
 from methods import method_parameter_update
 from wiener_system import (
     WienerDimensions,
@@ -152,8 +152,8 @@ def main() -> None:
     fig = plt.figure(figsize=(10, 7.5))
     ax1 = fig.add_subplot(2, 2, (1, 2))
     ax1.plot(np.arange(lambda_g), c_np, "b-", lw=0.8, label="Observed Output")
-    ax1.plot(np.arange(lambda_g), c_sim_final, "r.", ms=3.0, label=f"Simulated Output / {method_name}")
-    ax1.set_title(f"Observation and Simulation Output of {method_name}")
+    ax1.plot(np.arange(lambda_g), c_sim_final, "r.", ms=3.0, label=f"Simulated Output / {method_figure_label(method_name)}")
+    ax1.set_title(f"Observation and Simulation Output of {method_figure_label(method_name)}")
     ax1.set_xlabel("Time")
     ax1.set_ylabel("c(t)")
     ax1.grid(True)
@@ -173,7 +173,7 @@ def main() -> None:
     ax3.set_ylabel("Error")
     ax3.grid(True)
     ax3.legend(loc="best")
-    fig.suptitle(f"{method_name}: {experiment_name} (PyTorch)", fontsize=13, fontweight="bold")
+    fig.suptitle(f"{method_figure_label(method_name)}: {experiment_name} (PyTorch)", fontsize=13, fontweight="bold")
     fig.tight_layout()
 
     fig2, axes = plt.subplots(int(np.ceil(dims.n_params / 3)), 3, figsize=(9, 5.5))
@@ -189,7 +189,7 @@ def main() -> None:
         axes[i].legend(["Estimate", "True"], loc="best")
     for i in range(dims.n_params, len(axes)):
         axes[i].axis("off")
-    fig2.suptitle(f"Parameter Convergence Trajectories - {method_name} / {experiment_name} (PyTorch)", fontsize=12, fontweight="bold")
+    fig2.suptitle(f"Parameter Convergence Trajectories - {method_figure_label(method_name)} / {experiment_name} (PyTorch)", fontsize=12, fontweight="bold")
     fig2.tight_layout()
     plt.show()
 

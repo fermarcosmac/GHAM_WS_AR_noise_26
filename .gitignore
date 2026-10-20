@@ -1,1 +1,16 @@
+# Python environments and generated caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# MATLAB autosaves and editor backups
 *.asv
+*.m~
+
+# Local validation/preferences, scratch work, and disposable experiment outputs
+/.validation/
+/tmp/
+/results/local/
+/figs/local/

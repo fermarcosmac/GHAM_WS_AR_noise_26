@@ -128,6 +128,23 @@ class ComparisonDiagnosticsTests(unittest.TestCase):
         np.testing.assert_allclose(summary['param_err_stderr'], 1.)
         self.assertTrue(np.isnan(summary['final_param_estimates'][0, 2]).all())
 
+    def test_progress_covers_skips_and_updates_without_changing_results(self):
+        d = self.data
+        args = (['RGLS', 'WS-GGI'], self.configs, d['r'], d['nu'], d['c'],
+                self.theta, self.dims, 32, 3, 0, False)
+        kwargs = dict(verbose=False, experiment_cfg={'initialization': self.initialization})
+        events = []
+        logged = run_method_set(*args, **kwargs, progress_callback=events.append)
+        quiet = run_method_set(*args, **kwargs)
+        for first, second in zip(logged, quiet):
+            np.testing.assert_array_equal(first['theta_hist'], second['theta_hist'])
+            self.assertEqual(first['status'], second['status'])
+            self.assertEqual(first['run_metadata']['run_id'], second['run_metadata']['run_id'])
+        self.assertEqual([e['phase'] for e in events],
+                         ['method_start', 'method_end', 'method_start', 'iteration', 'iteration', 'method_end'])
+        self.assertEqual(events[1]['status'], 'skipped')
+        self.assertEqual(events[-1]['iteration'], 2)
+
     def test_all_methods_and_matlab_export_preserve_every_run(self):
         d = self.data
         runs = run_method_set(self.exp['selected_methods'], self.configs, d['r'], d['nu'], d['c'],

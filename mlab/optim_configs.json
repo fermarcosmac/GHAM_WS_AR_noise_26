@@ -48,7 +48,7 @@
       "hessian_mode": "diag",
       "hessian_regularization": 1e2,
       "order": 1,
-      "notes": "Placeholder for gradient-root GHAM first-order update."
+      "notes": "First-order gradient-root GHAM update using the diagonal fixed-regressor PL Hessian."
     },
     "WS_GGHAM_2_I": {
       "eta":1e-5,

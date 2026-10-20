@@ -78,7 +78,7 @@
       "order": 1,
       "d_step_multiplier": 100.0,
       "derivative_order": 1,
-      "notes": "Placeholder for loss-root GHAM update. Derivatives are available for custom manual rules."
+      "notes": "First-order loss-root GHAM update on the nonlinear FSM innovation-energy criterion."
     },
     "WS_LGHAM_3_TIK": {
       "eps_0": "automatic",
@@ -88,7 +88,7 @@
       "order": 3,
       "d_step_multiplier": 100.0,
       "derivative_order": 3,
-      "notes": "Placeholder for higher-order loss-root GHAM update. Derivatives are available for custom manual rules."
+      "notes": "Third-order loss-root GHAM update on the nonlinear FSM innovation-energy criterion."
     }
   }
 }
