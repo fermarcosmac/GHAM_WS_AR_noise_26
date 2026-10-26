@@ -85,9 +85,24 @@ assert(isequal(size(b.study.final_param_estimates),[1 3 9 2 6]));
 assert(isequal(size(b.study.bias),[1 3 9 6]));
 assert(~strcmp(b.study.dataset_ids{1,1,1,1},b.study.dataset_ids{1,1,1,2}));
 assert(isequal(b.study.theta0,[0;0;1;0;0;0]));
-figures=plot_record_length_study(b,struct('export_figures',true,'fig_dir',folder));
-assert(numel(figures)==3);
+[figures,outcomes]=plot_record_length_study(b,struct('export_figures',true,'fig_dir',folder));
+assert(numel(figures)==3 && height(outcomes)==27);
+for ax=findall(figures,'Type','axes').'
+    assert(strcmp(ax.Box,'on'));
+end
+assert(contains(figures(3).Name,'outcomes table'));
+assert(isempty(findall(figures(3),'Type','legend')));
+skip=strcmp(outcomes.MethodID,'WS-GGHAM-2-H');
+assert(all(outcomes.Skipped(skip)==2 & outcomes.SkippedPct(skip)==100));
+assert(all(outcomes.Failed(skip)==0 & outcomes.Finite(skip)==0));
+assert(all(outcomes.Converged+outcomes.Stalled+outcomes.MaxIterations+ ...
+    outcomes.Failed+outcomes.Skipped==outcomes.Trials));
+assert(all(outcomes.Used==outcomes.Finite));
 assert(exist(fullfile(folder,'record_length_example_1_pl.csv'),'file')==2);
+outcome_csv=fullfile(folder,'record_length_outcomes_example_1_pl.csv');
+assert(exist(outcome_csv,'file')==2);
+exported=readtable(outcome_csv);
+assert(height(exported)==height(outcomes) && isequal(exported.Skipped,outcomes.Skipped));
 close all;
 plot_comparison_results(struct('data_files',{{options.output_file}},'export_figures',false));
 close all;

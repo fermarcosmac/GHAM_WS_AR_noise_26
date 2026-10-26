@@ -56,6 +56,10 @@ at the end check the installed environment on short experiments.
 
 ## Choose an entry point
 
+Open [mlab/entry.m](mlab/entry.m) for a commented menu of MATLAB experiment,
+study, ablation, and plotting calls. Select a benchmark in its setup section,
+run that section, then uncomment and run the block you need.
+
 | Task | MATLAB / PL | Python / FSM |
 | --- | --- | --- |
 | Interactive standalone demo | [example.m](mlab/example.m) | [example_torch.py](python/example_torch.py) |
@@ -63,7 +67,7 @@ at the end check the installed environment on short experiments.
 | Fixed data, randomized parameter starts | [initialization_study.m](mlab/initialization_study.m) | [initialization_study.py](python/initialization_study.py) |
 | Independent records at several lengths | [record_length_study.m](mlab/record_length_study.m) | [record_length_study.py](python/record_length_study.py) |
 | Compare methods, estimates, and conditioning | [plot_comparison_results.m](mlab/plot_comparison_results.m) | Load the Python MAT files in the MATLAB plotter. |
-| Plot bias, RMSE, and outcome fractions | [plot_record_length_study.m](mlab/plot_record_length_study.m) | Load the Python MAT files in the MATLAB plotter. |
+| Plot bias, RMSE, and outcome tables | [plot_record_length_study.m](mlab/plot_record_length_study.m) | Load the Python MAT files in the MATLAB plotter. |
 
 The standalone demos and ordinary Python comparison script have **no command-line
 argument parser**. Select their experiment in the source, or use the APIs below.
@@ -555,16 +559,22 @@ For custom output paths, pass `data_files` as above; study type is detected from
 the saved payload. Initialization boxplots show final **estimates**, retain
 outliers, and add true-value lines; separate outcome-count plots expose failures,
 skips, and nonconverged finite runs. Record-length figures show signed bias with
-Monte Carlo intervals, parameter RMSE, and outcome fractions per resolution.
+Monte Carlo intervals and parameter RMSE with boxed axes. Each resolution also
+gets an outcome table with counts and percentages by record length and optimizer:
+finite, converged, stalled, iteration-limited, failed/invalid, skipped, and used
+in the bias/RMSE summary. Failed and skipped runs are reported separately.
 The direct record-length helper accepts a path or loaded payload:
 
 ```matlab
-plot_record_length_study(fullfile('results','local','record_length_fsm.mat'), ...
+[figures,outcomes] = plot_record_length_study(fullfile('results','local','record_length_fsm.mat'), ...
     struct('fig_dir',fullfile(pwd,'figs','local'),'export_figures',true));
 ```
 
 The direct diagnostic and record-length helpers default to no export; the main
-plotter defaults to export. Exported summaries include diagnostic or bias CSVs.
+plotter defaults to export. `outcomes` is a numeric MATLAB table. Exported
+summaries include diagnostic/bias CSVs and a separate
+`record_length_outcomes_<experiment>_<pl|fsm>.csv` with counts and percentages.
+The existing `record_length_outcomes_*.pdf` exports now contain tables.
 The plotter visualizes results; it does not perform new hypothesis tests.
 
 ### Source diagrams

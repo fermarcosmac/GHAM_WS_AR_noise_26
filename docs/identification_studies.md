@@ -171,8 +171,15 @@ marked converged are used. **Both are conditional summaries when trials are
 excluded**; outcome counts always refer to all attempted trials. Do not interpret
 survivor-only means as the unconditional bias of a reliable estimator.
 
-Figures show signed bias with Monte Carlo intervals, parameter RMSE, and outcome
-fractions. Export also writes a CSV with statistics and counts. These intervals
+Figures show signed bias with Monte Carlo intervals and parameter RMSE, with
+`box on` for each axes. Outcome diagnostics are tables, one per resolution, with
+counts and percentages by record length and method. They separate converged,
+stalled, iteration-limited, failed/invalid, and skipped trials, and report finite
+outputs and the population actually used in the bias/RMSE summary. The optional
+second output of `plot_record_length_study` is the numeric outcome table. Export
+also writes a separate `record_length_outcomes_<experiment>_<pl|fsm>.csv` and
+replaces the former outcome-curve PDFs with table PDFs. The parameter-statistics
+CSV keeps its existing `FailedOrSkipped` column for compatibility. These intervals
 quantify Monte Carlo uncertainty of the mean error; they are not confidence
 intervals for parameters from one measured record. Shared prefixes correlate
 lengths; no independent-length significance test is performed.
