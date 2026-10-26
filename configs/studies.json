@@ -7,7 +7,7 @@
     "distribution": "uniform",
     "center": null,
     "scale": 0.5,
-    "stability_radius": 0.95,
+    "stability_radius": 0.95, 
     "max_draws": 100000
   },
   "record_length_study": {

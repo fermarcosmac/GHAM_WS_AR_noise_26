@@ -1,0 +1,110 @@
+% Insert after the existing appendices; do not issue another \appendix.
+% Uses the notation of Appendix app:fsm_innovation_energy.
+% Add the entries in bias_analysis_references.bib to the manuscript bibliography.
+
+\section{Population objective and possible estimation bias}
+\label{app:ws_bias_analysis}
+
+\subsection{Population-objective identity}
+\label{app:ws_bias_population}
+
+Using the notation of Appendix~\ref{app:fsm_innovation_energy}, let
+\begin{equation}
+\label{eq:bias_population_objective}
+ \mathcal J(\theta)
+ =\frac12\mathbb E[r_{\nu,\mathrm{FSM}}^2(t;\theta)]
+\end{equation}
+denote the population counterpart of the innovation-energy criterion.
+The following identity is stated for stationary filtering and an exact
+representation of the true signal path, under the assumptions of that
+appendix. Define
+\begin{align}
+\label{eq:bias_population_definitions}
+ \Delta\beta(t;\theta)
+ &=\beta_{\mathrm{FSM}}(t;\theta^\star)
+       -\beta_{\mathrm{FSM}}(t;\theta),\\
+ d&=[d_1,\ldots,d_{n_d}]^\top,\qquad
+ E^\star(t)=[e^\star(t-1),\ldots,e^\star(t-n_d)]^\top,\nonumber\\
+ \Gamma_e&=\mathbb E[E^\star(t)E^\star(t)^\top].
+\end{align}
+The residual decomposition established there gives
+\begin{equation}
+\label{eq:bias_population_identity}
+ 2\mathcal J(\theta)
+ =\sigma_\nu^2
+  +(d-d^\star)^\top\Gamma_e(d-d^\star)
+  +\mathbb E\!\left[
+    \left(D(z^{-1};\theta)\Delta\beta(t;\theta)\right)^2\right].
+\end{equation}
+The cross terms vanish because the input is independent of the
+innovation process and $\nu(t)$ is orthogonal to past disturbances.
+Consequently, under identifiability and $\Gamma_e\succ0$, the true
+parameter $\theta^\star$ uniquely minimizes the population objective.
+This statement concerns fixed candidate parameters; it does not imply
+that estimates obtained from a finite noisy record are unbiased.
+For a fixed FSM approximation that does not represent the true signal
+path exactly, an additional approximation error must be considered.
+
+\subsection{Reconstructed regressors and statistical bias}
+\label{app:ws_bias_reconstruction}
+
+In the PL formulation, the unmeasured internal signals and disturbances
+are replaced by their reconstructions to build $\hat\Phi^{(k)}$.
+These reconstructions and the innovation estimates are updated using
+the same noisy output record. Their estimation errors can therefore
+share noise with the regression residual, so the usual
+regressor--error orthogonality need not hold. Regressor contamination
+and the resulting bias of ordinary least squares are standard
+errors-in-variables issues in system identification
+\cite{Soderstrom2007}.
+
+To see the mechanism, let $\varphi^\star(t)^\top$ be a row of the
+ideal PL regressor and $\hat\varphi(t)^\top$ its reconstructed
+counterpart at a given outer iteration. Since
+$c(t)=\varphi^\star(t)^\top\theta^\star+\nu(t)$, the regression using
+the reconstructed signals is
+\begin{align}
+\label{eq:bias_effective_regression_error}
+ c(t)&=\hat\varphi(t)^\top\theta^\star+\varepsilon(t),\\
+ \varepsilon(t)
+ &=\nu(t)-[\hat\varphi(t)-\varphi^\star(t)]^\top\theta^\star.
+\end{align}
+The reconstruction error enters both $\hat\varphi(t)$ and
+$\varepsilon(t)$. Hence, even though $\nu(t)$ is white, the effective
+regression error need not be orthogonal to the reconstructed regressor.
+If this correlation is present, least-squares updates can yield
+statistically biased estimates.
+
+Related block-oriented identification methods address this issue
+using instruments constructed from noise-free signal counterparts,
+together with iterative reconstruction of unmeasured internal signals
+\cite{NiGilsonGarnier2013}. Janczak and Korbicz
+\cite{JanczakKorbicz2019} give an explicit example in which
+regressor--disturbance correlation makes a transformed Wiener
+least-squares estimator inconsistent. Their disturbance placement
+differs from the output-noise model considered here, so that result
+illustrates the mechanism rather than proving bias of the present
+algorithms.
+
+Joint estimation alone does not establish bias. In particular,
+dependence on past colored disturbances does not imply correlation
+with the current white innovation. The relevant question is whether
+the implemented reconstruction preserves orthogonality with its
+effective regression error. This must be assessed for the estimator
+actually used; the population identity alone does not settle its
+finite-record bias.
+
+\subsection{Record-length study}
+\label{app:ws_bias_record_length}
+
+\noindent\textit{[Results and discussion will be inserted after the
+record-length study is complete.]}
+
+% RESULTS PENDING.
+% Report signed mean parameter error and its Monte Carlo uncertainty
+% versus record length, together with optimization outcomes.
+% State whether failed or nonconverged fits are included.
+% Discuss whether any observed offset decreases with record length and
+% whether it changes with FSM resolution or reconstruction/initialization.
+% Do not infer bias, unbiasedness, or inconsistency before inspecting
+% the completed results and their uncertainty.

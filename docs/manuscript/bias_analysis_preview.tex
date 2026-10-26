@@ -1,0 +1,25 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage{amsmath,amssymb}
+% The manuscript normally supplies amsthm. The fallback keeps this preview
+% buildable in a minimal LaTeX installation without downloading packages.
+\IfFileExists{amsthm.sty}{\usepackage{amsthm}}{%
+  \newenvironment{proof}{\par\noindent\textit{Proof.}\ }%
+    {\hfill\(\square\)\par}}
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{corollary}[proposition]{Corollary}
+\ifdefined\theoremstyle\theoremstyle{remark}\fi
+\newtheorem{remark}{Remark}[section]
+\numberwithin{equation}{section}
+\setlength{\emergencystretch}{2em}
+% External appendix number follows the existing section4_preview.tex.
+% The full manuscript resolves this label normally; this is preview-only.
+\makeatletter
+\@namedef{r@app:fsm_innovation_energy}{{D}{--}}
+\makeatother
+\begin{document}
+\appendix
+\input{appendix_bias_analysis}
+\bibliographystyle{plain}
+\bibliography{bias_analysis_references}
+\end{document}
