@@ -17,11 +17,19 @@ table at N=10000. The complete outcome
 breakdowns remain in figs/record_length_outcomes_*.csv and their original PDFs.
 Figures are regenerated from the saved MAT studies using the user's revised
 mlab/plot_record_length_study.m. RMSE panels now use logarithmic vertical
-axes; signed mean-error panels retain linear vertical axes capped at [-1,1],
-while preserving tighter automatic ranges. Outlying plotted values and
-error-bar portions are clipped, without modifying their statistics. Repeated axis
+axes; each signed mean-error axis now fits the means and 95% MC intervals
+at the last three record lengths (N=2000,5000,10000), plus zero and an 8% margin.
+Earlier off-scale means and their complete error bars are omitted. Connections
+between off-scale and visible means are dashed and clipped in log-x/linear-y
+coordinates before rendering. Error bars at visible means are clipped to the
+displayed range without modifying the statistics. The previous [-1,1] cap
+is superseded by this last-three-record-length range. All twelve parameter-wise
+PDFs have the same 18 cm by 10 cm page dimensions, and all eight included
+images use 92% of the text width. Repeated axis
 labels are suppressed by the plotting function. The appendix captions and
 discussion of extreme values reflect this display. No estimation study is rerun.
+The results interpretation is condensed into two paragraphs using only the
+signed per-parameter mean errors, per-parameter RMSEs, and outcome counts.
 
 The standalone preview provides the external appendix reference as D,
 searches for figures relative to the repository root, and uses the supplied
@@ -33,26 +41,33 @@ regular curves, especially at large N, also agree, but short-record extreme
 outliers can differ substantially. The text states this qualification rather
 than claiming every curve is identical.
 
-## Optional aggregate-bias figures
+## Optional mean overall-error figures
 
 The existing appendix and its parameter-wise figures are retained. The separate
 aggregate_bias_preview.tex previews an alternative with one optimizer per panel,
-using the Euclidean norm of the six-component signed mean-error vector. The
-norm is taken after averaging each parameter error over retained runs. It is
-neither the average error norm nor total parameter RMSE. Parameters use their
-original scale, with equal weights; no division by true parameters is used.
-This is a plug-in Monte Carlo estimate of the bias norm, so finite-run
-uncertainty also affects its magnitude, especially when the true bias is small.
-The parameter-wise 95% intervals are not transferred to this nonlinear norm.
+using the Euclidean norm of the six-parameter estimation error for each run,
+then averaging these scalar norms over retained runs. Error bars are pointwise
+approximate 95% Monte Carlo confidence intervals for that mean, computed as
+mean +/- 1.96 times the sample standard deviation of the run norms divided by
+sqrt(retained runs). No interval is reported with fewer than two retained runs.
+This is a mean error magnitude, not statistical bias or total parameter RMSE.
+Parameters use their original scale, with equal weights; no division by true
+parameters is used. The error norm is computed from saved per-run estimates,
+not from the saved parameter-wise bias or RMSE summaries.
 
 mlab/plot_record_length_aggregate_bias.m exports six additional PDFs and four
 CSV reports from the saved studies. plot_record_length_study.m generates both
 views, appending the aggregate figures after all original bias/RMSE/outcome
 figures, and exposes the aggregate report as an optional third output.
 The aggregate axes are linear on [0,1], retaining tighter ranges; upward
-triangles identify clipped values. Missing/skipped optimizers remain missing,
+triangles identify clipped means, and interval portions outside the displayed
+range are clipped. Full means and interval endpoints are retained in the CSVs.
+Missing/skipped optimizers remain missing,
 and changing retained counts are indicated in the corresponding panels.
 The separate preview is output/pdf/aggregate_bias_comparison.pdf.
+Historical aggregate_bias function and export filenames are retained for
+compatibility; all labels, formulas, and CSV columns describe mean per-run
+overall estimation error. These replace the earlier norm-of-mean-error plots.
 
 ## Theory and source scope
 
@@ -103,8 +118,8 @@ or that joint reconstruction alone causes bias in the implemented methods.
   resolutions; 93 failures must accompany any interpretation of its curves.
 - Example 1 FSM128 WS-GNI has a b1 RMSE approximately 1.38e14 at N=500;
   extreme finite outliers are retained in the statistics and logarithmic
-  RMSE panels, while the capped linear mean-error panels clip values and
-  error-bar portions outside the displayed range.
+  RMSE panels. Mean-error panels omit off-scale means and their error bars,
+  using dashed visible segments to indicate transitions into or out of range.
 - CSTR offsets survive the tested FSM resolution change; this does not
   identify their cause or establish inconsistency.
 - A configured convergence flag can mean loss-target attainment and does

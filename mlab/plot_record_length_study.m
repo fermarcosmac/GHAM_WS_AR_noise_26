@@ -1,7 +1,8 @@
 function [figures, outcome_report, aggregate_report] = plot_record_length_study(payload, options)
-% Plot parameter bias/RMSE, outcomes, and aggregate bias by optimizer.
+% Plot parameter bias/RMSE, outcomes, and mean per-run error norm by optimizer.
 % The optional second output is a numeric table, also exported as a separate CSV.
 % Aggregate figures are appended after the existing three figures per resolution.
+% include_aggregate, export_outcomes, and export_statistics default to true.
 if nargin<2, options=struct(); end
 if ischar(payload) || isstring(payload), payload=load(payload); end
 s = payload.study; backend=char(payload.parametrization);
@@ -26,6 +27,7 @@ end
 outcome_report=build_outcome_report(backend,resolutions,lengths,names,double(s.n_runs), ...
     finite,converged,stalled,limited,failed,skipped,used,char(s.summary_population));
 export=isfield(options,'export_figures') && options.export_figures;
+export_outcomes=export && (~isfield(options,'export_outcomes') || options.export_outcomes);
 folder=fullfile(fileparts(fileparts(mfilename('fullpath'))),'figs');
 if isfield(options,'fig_dir'), folder=options.fig_dir; end
 if export && ~exist(folder,'dir'), mkdir(folder); end
@@ -34,31 +36,57 @@ for c=1:C
     for metric={'bias','rmse'}
         field=metric{1};
         fig=figure('Color','w','Name',[backend ' record-length ' field], ...
-            'Units','centimeters','Position',[2 2 30 8.5*ceil(P/3)]);
+            'Units','centimeters','Position',[2 2 18 5*ceil(P/3)]);
         tl=tiledlayout(fig,ceil(P/3),3,'TileSpacing','compact','Padding','compact');
         for p=1:P
             ax=nexttile(tl); hold(ax,'on'); ax.TickLabelInterpreter='latex';
+            ax.FontSize=8.5;
+            ax.XScale='log'; grid(ax,'on'); box(ax,'on');
+            xlim(ax,[lengths(1)/1.06 lengths(end)*1.06]);
+            ax.XTick=lengths;
+            ax.XTickLabel=arrayfun(@(n)sprintf('%g',n),lengths,'UniformOutput',false);
+            if strcmp(field,'bias')
+                late=max(1,L-2):L;
+                late_bias=reshape(bias(c,late,:,p),[],1);
+                late_half=1.96*reshape(se(c,late,:,p),[],1);
+                limits=bias_display_limits(late_bias,late_half);
+                ylim(ax,limits);
+                ax.UserData=struct('late_indices',late,'display_limits',limits);
+            end
             for m=1:M
                 y=reshape(bias(c,:,m,p),1,L);
                 if strcmp(field,'bias')
-                    errorbar(ax,lengths,y,1.96*reshape(se(c,:,m,p),1,L),'-o', ...
-                        'Color',colors(m,:),'DisplayName',latex_literal(method_figure_label(names{m})));
+                    inside=isfinite(y) & y>=limits(1) & y<=limits(2);
+                    visible_y=y; visible_y(~inside)=NaN;
+                    plot(ax,lengths,visible_y,'-o','Color',colors(m,:), ...
+                        'LineWidth',1,'MarkerSize',3,'Tag','bias_curve', ...
+                        'UserData',m,'DisplayName',latex_literal(method_figure_label(names{m})));
+                    half=1.96*reshape(se(c,:,m,p),1,L);
+                    half(~inside)=NaN;
+                    errorbar(ax,lengths,visible_y,half,'LineStyle','none','Marker','none', ...
+                        'Color',colors(m,:),'LineWidth',.7,'CapSize',3, ...
+                        'HandleVisibility','off','Tag','bias_intervals','UserData',m);
+                    for j=1:L-1
+                        if all(isfinite(y(j:j+1))) && ~all(inside(j:j+1))
+                            [xx,yy]=visible_bias_segment(lengths(j:j+1),y(j:j+1),limits);
+                            if ~isempty(xx)
+                                plot(ax,xx,yy,'--','Color',colors(m,:),'LineWidth',1, ...
+                                    'HandleVisibility','off','Tag','bias_transition', ...
+                                    'UserData',struct('method',m,'indices',j:j+1));
+                            end
+                        end
+                    end
                 else
                     plot(ax,lengths,reshape(rmse(c,:,m,p),1,L),'-o', ...
-                        'Color',colors(m,:),'DisplayName',latex_literal(method_figure_label(names{m})));
+                        'Color',colors(m,:),'LineWidth',1,'MarkerSize',3, ...
+                        'DisplayName',latex_literal(method_figure_label(names{m})));
                 end
             end
-            ax.XScale='log'; grid(ax,'on'); box(ax,'on');
             if p>3*(ceil(P/3)-1)
                 xlabel(ax,'Record length $N$','Interpreter','latex');
             end
             if strcmp(field,'bias')
                 yline(ax,0,'k--','HandleVisibility','off');
-                % Keep tight automatic ranges, but cap extreme-value axes.
-                limits=ylim(ax);
-                bounded_limits=[max(limits(1),-1),min(limits(2),1)];
-                if bounded_limits(1)>=bounded_limits(2), bounded_limits=[-1 1]; end
-                ylim(ax,bounded_limits);
                 if mod(p-1,3)==0, ylabel(ax,'Signed mean error','Interpreter','latex'); end
             else
                 ax.YScale='log';
@@ -66,29 +94,29 @@ for c=1:C
             end
             title(ax,['$' labels{p} '$'],'Interpreter','latex');
             if p==1
-                lg=legend(ax,'Interpreter','latex','NumColumns',3); lg.Layout.Tile='south';
+                lg=legend(ax,'Interpreter','latex','NumColumns',3,'FontSize',8);
+                lg.Layout.Tile='south';
             end
         end
         if strcmp(field,'bias')
-            title_text=sprintf('%s / %s: mean error; population=%s; 95%% MC intervals', ...
-                backend,resolutions{c},char(s.summary_population));
+            title_text=sprintf('%s / %s: signed mean error and 95%% MC intervals', ...
+                backend,resolutions{c});
         else
-            title_text=sprintf('%s / %s: parameter RMSE; population=%s', ...
-                backend,resolutions{c},char(s.summary_population));
+            title_text=sprintf('%s / %s: parameter RMSE',backend,resolutions{c});
         end
-        title(tl,latex_literal(title_text),'Interpreter','latex');
+        title(tl,latex_literal(title_text),'Interpreter','latex','FontSize',9.5);
         figures(end+1)=fig; %#ok<AGROW>
         save_figure(fig,folder,payload,resolutions{c},field,export);
     end
     table_rows=outcome_report(strcmp(outcome_report.Resolution,resolutions{c}),:);
     fig=plot_outcome_table(table_rows,backend,resolutions{c},M,char(s.summary_population));
     figures(end+1)=fig; %#ok<AGROW>
-    save_figure(fig,folder,payload,resolutions{c},'outcomes',export);
+    save_figure(fig,folder,payload,resolutions{c},'outcomes',export_outcomes);
 end
 fprintf('\n%s record-length outcomes (counts out of Trials; percentages are in the table figures/CSV):\n',backend);
 disp(outcome_report(:,{'Resolution','N','Method','Trials','Finite','Converged', ...
     'Stalled','MaxIterations','Failed','Skipped','Used'}));
-if export
+if export && (~isfield(options,'export_statistics') || options.export_statistics)
     writetable(outcome_report,fullfile(folder, ...
         ['record_length_outcomes_' char(payload.experiment_name) '_' lower(backend) '.csv']));
     rows=cell(C*L*M*P,15); i=0;
@@ -109,8 +137,42 @@ if export
         'Bias','MCSE','CILow','CIHigh','Variance','RMSE','Used','Finite','Converged','FailedOrSkipped'});
     writetable(report,fullfile(folder,['record_length_' char(payload.experiment_name) '_' lower(backend) '.csv']));
 end
-[aggregate_figures,aggregate_report]=plot_record_length_aggregate_bias(payload,options);
-figures=[figures aggregate_figures.'];
+aggregate_report=table();
+if ~isfield(options,'include_aggregate') || options.include_aggregate
+    [aggregate_figures,aggregate_report]=plot_record_length_aggregate_bias(payload,options);
+    figures=[figures aggregate_figures.'];
+end
+end
+
+function limits=bias_display_limits(means,half_widths)
+% Fit all available means and MC intervals at the last three record lengths.
+values=[0;means(:);means(:)-half_widths(:);means(:)+half_widths(:)];
+values=values(isfinite(values));
+low=min(values); high=max(values); span=high-low;
+if span==0, span=max(1e-6,.1*abs(low)); end
+limits=[low-.08*span high+.08*span];
+end
+
+function [xx,yy]=visible_bias_segment(x,y,limits)
+% Clip in displayed (log-x, linear-y) coordinates before vector export.
+% This avoids sending enormous off-axis values to the graphics renderer.
+inside=y>=limits(1) & y<=limits(2);
+xx=[]; yy=[];
+if all(y<limits(1)) || all(y>limits(2)), return; end
+lx=log10(x);
+if inside(1)
+    bound=limits(1); if y(2)>limits(2), bound=limits(2); end
+    fraction=(bound-y(1))/(y(2)-y(1));
+    xx=[x(1) 10^(lx(1)+fraction*(lx(2)-lx(1)))]; yy=[y(1) bound];
+elseif inside(2)
+    bound=limits(1); if y(1)>limits(2), bound=limits(2); end
+    fraction=(bound-y(2))/(y(1)-y(2));
+    xx=[10^(lx(2)+fraction*(lx(1)-lx(2))) x(2)]; yy=[bound y(2)];
+else
+    bounds=limits; if y(1)>y(2), bounds=fliplr(bounds); end
+    fraction=(bounds-y(1))/(y(2)-y(1));
+    xx=10.^(lx(1)+fraction*(lx(2)-lx(1))); yy=bounds;
+end
 end
 
 function report=build_outcome_report(backend,resolutions,lengths,names,trials, ...
@@ -204,7 +266,15 @@ end
 function save_figure(fig,folder,payload,resolution,metric,export)
 if ~export, return; end
 tag=regexprep([char(payload.experiment_name) '_' lower(char(payload.parametrization)) '_' resolution],'[^a-zA-Z0-9_-]','_');
-exportgraphics(fig,fullfile(folder,['record_length_' metric '_' tag '.pdf']),'ContentType','vector');
+filename=fullfile(folder,['record_length_' metric '_' tag '.pdf']);
+if ismember(metric,{'bias','rmse'})
+    % Fixed PDF page dimensions keep all parameter-wise panels equally sized.
+    fig.PaperUnits='centimeters'; fig.PaperSize=fig.Position(3:4);
+    fig.PaperPosition=[0 0 fig.Position(3:4)]; fig.PaperPositionMode='manual';
+    print(fig,filename,'-dpdf','-painters');
+else
+    exportgraphics(fig,filename,'ContentType','vector');
+end
 end
 
 function value=latex_literal(value)

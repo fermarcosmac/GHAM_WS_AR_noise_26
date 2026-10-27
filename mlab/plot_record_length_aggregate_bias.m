@@ -1,6 +1,7 @@
 function [figures, report] = plot_record_length_aggregate_bias(payload, options)
-% One optimizer per panel: Euclidean norm of the signed mean-error vector.
-% This is norm(mean(error)), not mean(norm(error)) or total parameter RMSE.
+% One optimizer per panel: mean per-run Euclidean parameter error and 95% MC CI.
+% Historical function/export names are retained for compatibility. The metric
+% is mean(norm(error)): an estimation-error magnitude, not statistical bias.
 % Uses the saved summary population without rerunning any identification.
 if nargin<2, options=struct(); end
 if ischar(payload) || isstring(payload), payload=load(payload); end
@@ -9,17 +10,33 @@ names=cellstr(string(s.method_names));
 resolutions=cellstr(string(s.resolution_labels));
 lengths=double(s.record_lengths(:).');
 C=numel(resolutions); L=numel(lengths); M=numel(names); P=numel(s.theta_true);
-bias=reshape(s.bias,[C L M P]);
-counts=reshape(s.count,[C L M P]);
-assert(all(counts==counts(:,:,:,1),'all'), ...
-    'All parameters must use the same retained realizations.');
-used=counts(:,:,:,1);
-% No omission of missing parameters: an unavailable bias vector stays NaN.
-total_bias=NaN(C,L,M);
+R=double(s.n_runs);
+estimates=reshape(s.final_param_estimates,[C L M R P]);
+states=reshape(string(s.statuses),[C L M R]);
+assert(ismember(char(s.summary_population),{'finite','converged'}), ...
+    'summary_population must be finite or converged.');
+mean_error=NaN(C,L,M); std_error=NaN(C,L,M); mcse=NaN(C,L,M);
+ci_low=NaN(C,L,M); ci_high=NaN(C,L,M); used=zeros(C,L,M);
 for c=1:C
     for j=1:L
         for m=1:M
-            total_bias(c,j,m)=norm(reshape(bias(c,j,m,:),P,1),2);
+            values=reshape(estimates(c,j,m,:,:),[R P]);
+            keep=all(isfinite(values),2);
+            if strcmp(char(s.summary_population),'converged')
+                keep=keep & reshape(states(c,j,m,:),[R 1])=="converged";
+            end
+            used(c,j,m)=sum(keep);
+            if ~any(keep), continue; end
+            % Aggregate within each run BEFORE averaging over runs.
+            errors=values(keep,:)-reshape(s.theta_true,1,P);
+            run_error=vecnorm(errors,2,2);
+            mean_error(c,j,m)=mean(run_error);
+            if used(c,j,m)>1
+                std_error(c,j,m)=std(run_error,0);
+                mcse(c,j,m)=std_error(c,j,m)/sqrt(used(c,j,m));
+                ci_low(c,j,m)=mean_error(c,j,m)-1.96*mcse(c,j,m);
+                ci_high(c,j,m)=mean_error(c,j,m)+1.96*mcse(c,j,m);
+            end
         end
     end
 end
@@ -28,25 +45,26 @@ folder=fullfile(fileparts(fileparts(mfilename('fullpath'))),'figs');
 if isfield(options,'fig_dir'), folder=options.fig_dir; end
 if export && ~exist(folder,'dir'), mkdir(folder); end
 colors=lines(M); figures=gobjects(C,1);
-rows=cell(C*L*M,8); row=0;
+rows=cell(C*L*M,12); row=0;
 for c=1:C
     fig=figure('Color','w','Name',[char(payload.parametrization) ...
-        ' record-length aggregate bias / ' resolutions{c}], ...
+        ' record-length mean overall error / ' resolutions{c}], ...
         'Units','centimeters','Position',[2 2 30 7.5*ceil(M/3)]);
     tl=tiledlayout(fig,ceil(M/3),3,'TileSpacing','compact','Padding','compact');
     for m=1:M
         ax=nexttile(tl); hold(ax,'on'); ax.TickLabelInterpreter='latex';
-        y=reshape(total_bias(c,:,m),1,L);
-        plot(ax,lengths,y,'-o','Color',colors(m,:),'LineWidth',1.1, ...
-            'MarkerSize',4,'Tag','aggregate_bias');
+        y=reshape(mean_error(c,:,m),1,L);
+        half_width=1.96*reshape(mcse(c,:,m),1,L);
+        errorbar(ax,lengths,y,half_width,'-o','Color',colors(m,:),'LineWidth',1.1, ...
+            'MarkerSize',4,'CapSize',4,'Tag','aggregate_error');
         ax.XScale='log'; grid(ax,'on'); box(ax,'on');
-        xlim(ax,[lengths(1) lengths(end)]);
+        xlim(ax,[lengths(1)/1.05 lengths(end)*1.05]);
         title(ax,method_figure_label(names{m}),'Interpreter','none');
         if m>3*(ceil(M/3)-1)
             xlabel(ax,'Record length $N$','Interpreter','latex');
         end
         if mod(m-1,3)==0
-            ylabel(ax,'$\|\widehat{\boldsymbol b}_N\|_2$','Interpreter','latex');
+            ylabel(ax,'Mean overall error','Interpreter','latex');
         end
         if any(isfinite(y))
             % Match the earlier display cap, with a nonnegative norm axis.
@@ -57,15 +75,14 @@ for c=1:C
                 % Boundary triangles distinguish clipped points from missing fits.
                 plot(ax,lengths(clipped),repmat(ax.YLim(2),1,sum(clipped)), ...
                     '^','Color',colors(m,:),'MarkerFaceColor',colors(m,:), ...
-                    'MarkerSize',5,'Clipping','off','Tag','clipped_bias');
+                    'MarkerSize',5,'Clipping','off','Tag','clipped_error');
             end
             retained=reshape(used(c,:,m),1,L);
             if any(retained<double(s.n_runs))
                 count_text=strjoin(arrayfun(@(n)sprintf('%d',n),retained, ...
                     'UniformOutput',false),', ');
-                text(ax,.02,.95,['Retained: ' count_text ' / ' num2str(s.n_runs)], ...
-                    'Units','normalized','VerticalAlignment','top', ...
-                    'Interpreter','none','FontSize',7.5,'BackgroundColor','white');
+                subtitle(ax,['Retained: ' count_text ' / ' num2str(s.n_runs)], ...
+                    'Interpreter','none','FontSize',7.5);
             end
         else
             ylim(ax,[0 1]);
@@ -78,13 +95,14 @@ for c=1:C
         for j=1:L
             row=row+1;
             rows(row,:)={char(payload.parametrization),resolutions{c},lengths(j), ...
-                names{m},total_bias(c,j,m),used(c,j,m),double(s.n_runs),char(s.summary_population)};
+                names{m},mean_error(c,j,m),std_error(c,j,m),mcse(c,j,m), ...
+                ci_low(c,j,m),ci_high(c,j,m),used(c,j,m),R,char(s.summary_population)};
         end
     end
     title(tl,[char(payload.parametrization) ' / ' strrep(resolutions{c},'_','\_') ...
-        ': norm of mean parameter error'],'Interpreter','latex');
-    subtitle(tl,{'All parameters; original parameter scale; no Monte Carlo intervals', ...
-        'Linear y axes capped at 1; triangles mark clipped points'}, ...
+        ': mean per-run parameter-error norm'],'Interpreter','latex');
+    subtitle(tl,{'Six parameters; original scale; pointwise approximate 95% MC intervals', ...
+        'Linear y axes within [0,1]; outlying means/intervals clipped; triangles mark clipped means'}, ...
         'Interpreter','none','FontSize',9);
     figures(c)=fig;
     if export
@@ -96,7 +114,8 @@ for c=1:C
     end
 end
 report=cell2table(rows,'VariableNames',{'Parametrization','Resolution','N', ...
-    'Method','BiasNorm','Used','Trials','SummaryPopulation'});
+    'Method','MeanErrorNorm','StdErrorNorm','MCSE','CILow','CIHigh', ...
+    'Used','Trials','SummaryPopulation'});
 if export
     writetable(report,fullfile(folder,['record_length_aggregate_bias_' ...
         char(payload.experiment_name) '_' lower(char(payload.parametrization)) '.csv']));

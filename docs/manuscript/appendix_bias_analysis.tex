@@ -231,10 +231,13 @@ estimate from one record, and are not simultaneous bands.
 Record length is displayed on a logarithmic axis in all panels; RMSE
 also uses a logarithmic vertical axis, whereas signed mean errors
 remain on a linear vertical axis.
-The mean-error vertical axes are capped at $[-1,1]$, with tighter
-automatic ranges retained when possible. Points and error-bar portions
-outside the displayed range are clipped for visualization only;
-the underlying statistics are unchanged.
+For each parameter, the signed mean-error range contains the means and
+Monte Carlo intervals at the last three record lengths, with a margin
+around them and zero. Earlier means outside this range are not displayed,
+and their confidence bars are omitted. Segments connecting an off-scale
+mean to an in-range mean are dashed; only their visible portions are
+drawn. Interval portions outside the displayed range are clipped.
+These display choices do not change the reported statistics.
 
 Finite outputs are retained even when the method stalls or reaches the
 iteration limit. When failures are excluded, the corresponding summaries
@@ -244,71 +247,38 @@ Table~\ref{tab:bias_outcomes} reports the largest-record outcome counts;
 satisfied, not that a global minimum or unbiased estimate was certified.
 RGLS for FSM and GHAM-2-H for PL were skipped.
 
-For Example~1, the PL signal-parameter mean errors are small at the
-largest tested record length
-(Fig.~\ref{fig:bias_ex1_pl}). At $N=10000$, all five signal-parameter
-intervals include zero for every available PL method. The $d_1$
-intervals also include zero for RGLS, WS-GNI, the two diagonal-Hessian
-GHAM methods, and LHAM-3-TIK. In contrast, the $d_1$ mean errors for
-WS-GGI and GHAM-2-I remain approximately $0.272$ and $0.241$,
-respectively; all their fits reach the iteration limit. These offsets
-therefore describe the finite-budget implementations and cannot be
-attributed solely to statistical bias of a converged estimator.
+Figures~\ref{fig:bias_ex1_pl}--\ref{fig:bias_cstr_fsm128} show a general
+reduction in per-parameter RMSE as the record length increases, although
+this improvement is neither uniform nor strictly monotonic. In
+Example~1 with PL parametrization, the $d_1$ mean error of WS-GGI
+increases, whereas GHAM-2-I reduces its RMSE but retains a substantial
+$d_1$ offset in both benchmarks. Some CSTR FSM signal-parameter RMSEs
+also flatten or increase as nonzero mean errors persist. At the largest
+record length, all six signed mean-error intervals contain zero for
+the Example~1 FSM loss-root estimates, while all six exclude zero for
+the corresponding CSTR estimates. Short-record finite outliers for
+WS-GNI and GHAM-2-H further illustrate that increasing the record length
+can improve accuracy without producing a uniform trend across methods
+or parameters.
 
-The Example~1 FSM results
-(Fig.~\ref{fig:bias_ex1_fsm128})
-show decreasing RMSE for the loss-root methods. For example, with
-$128$ coefficients, LHAM-3-TIK reduces the $d_1$ RMSE from $0.119$ at
-$N=500$ to $0.0187$ at $N=10000$; the final mean error is $-0.00218$,
-with interval $[-0.00583,0.00147]$. Both loss-root methods satisfy their
-stopping criteria in all $100$ largest-record fits, and their six
-parameter intervals include zero. This is compatible with small mean
-errors at the achieved Monte Carlo precision, but does not prove
-unbiasedness.
-
-Other FSM outcomes require caution. Short records produce extreme
-finite outliers for WS-GNI and GHAM-2-H, particularly at the lower
-resolution. Values outside the displayed mean-error range are clipped;
-the logarithmic RMSE axes retain their full magnitude together with
-the smaller errors of the other methods. For instance, the
-$N=500$, $128$-coefficient WS-GNI estimate of $b_1$ has an RMSE of about
-$1.38\times10^{14}$ despite all $100$ outputs being finite.
-Furthermore, only $7$ of the $100$ Example~1 GHAM-2-I fits remain finite
-at $N=10000$, at either resolution. Its displayed mean errors and RMSEs
-are thus conditional on those seven fits and must be interpreted
-together with the $93$ failures.
-
-For the CSTR benchmark, the PL results
-(Fig.~\ref{fig:bias_cstr_pl}) again show small signal-parameter mean
-errors at the largest record, while the disturbance coefficient is
-more difficult to estimate. For RGLS, the $d_1$ mean error decreases
-from $0.125$ to $0.0119$ as $N$ increases from $500$ to $10000$, and
-the RMSE decreases from $0.172$ to $0.0206$. Nevertheless, its final
-interval $[0.00860,0.0152]$ excludes zero, although all $100$ fits are
-marked converged. WS-GNI and the diagonal-Hessian GHAM methods give
-essentially the same largest-record statistics. WS-GGI and GHAM-2-I
-retain larger $d_1$ offsets, approximately $0.218$ and $0.370$,
-respectively, with every fit reaching the iteration limit.
-
-The CSTR FSM results
-(Fig.~\ref{fig:bias_cstr_fsm128})
-exhibit detectable signal-parameter offsets despite decreasing
-variability. At $N=10000$, LHAM-3-TIK has mean errors approximately
-$-0.00520$ for $a_1$, $0.00636$ for $b_2$, and $0.0174$ for $d_1$.
-All six parameter intervals exclude zero for both loss-root methods,
-although every fit satisfies its stopping criterion at every tested
-record length. The two FSM resolutions give essentially identical
-CSTR statistics, and the largest-record Example~1 loss-root results
-also agree closely. Thus increasing the tested resolution does not
-remove the CSTR offsets; this comparison alone neither identifies
-their cause nor rules out every approximation effect.
-
-Overall, increasing the record length reduces many errors, but does
-not eliminate all observed method-dependent offsets under the
-configured computational budget. The results establish finite-record
-behavior of the returned estimates. They do not establish exact
-unbiasedness when an interval contains zero, or inconsistency when
-an interval excludes zero at the tested record lengths.
+The empirical bias--variance identity,
+$\widehat{\mathrm{RMSE}}_{j,N}^{2}
+=\widehat b_{j,N}^{2}+(1-R_N^{-1})s_{j,N}^{2}$,
+explains why decreasing RMSE can coexist with a persistent or increasing
+mean offset: the reduction in dispersion can outweigh an increase in
+squared bias. In particular, the narrower Monte Carlo intervals in the
+CSTR FSM results make several parameter offsets more discernible.
+These observations provide evidence of nonzero finite-record mean errors
+for some configured estimators, without establishing an intrinsic bias
+of the identification problem. Accuracy must also be assessed alongside
+numerical reliability: only $7$ of $100$ Example~1 FSM GHAM-2-I fits
+remain finite at $N=10000$, so its reported statistics are conditional
+on those seven outputs. The findings concern the tested update rules,
+initialization, tuning, approximation settings, and $300$-iteration
+budget. They neither establish asymptotic unbiasedness or consistency
+nor isolate the causes of the observed offsets; classical recursive
+identification theory likewise requires method-specific convergence
+conditions \cite{SoderstromLjungGustavsson1978,Ljung1981}.
 
 \begin{table}[htbp]
 \centering
@@ -349,53 +319,50 @@ LHAM-3-TIK & $100/59$  & $100/100$ & $100/100$\\
 
 \begin{figure}[p]
 \centering
-\includegraphics[width=\linewidth]{figs/record_length_bias_example_1_pl_recursive_PL.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_bias_example_1_pl_recursive_PL.pdf}
 \par\medskip
-\includegraphics[width=\linewidth]{figs/record_length_rmse_example_1_pl_recursive_PL.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_rmse_example_1_pl_recursive_PL.pdf}
 \caption{Example~1, PL: signed mean parameter errors with pointwise
 $95\%$ Monte Carlo intervals (upper panel, linear vertical scale), and
-parameter RMSEs (lower panel, logarithmic vertical scale). Mean-error
-axes are capped at $[-1,1]$. Finite stalled and iteration-limited
-outputs are retained.}
+parameter RMSEs (lower panel, logarithmic vertical scale). Bias ranges
+show the last three record lengths; dashed segments indicate connections
+to off-scale means, whose intervals are omitted.}
 \label{fig:bias_ex1_pl}
 \end{figure}
 
 \begin{figure}[p]
 \centering
-\includegraphics[width=\linewidth]{figs/record_length_bias_example_1_fsm_fsm_128.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_bias_example_1_fsm_fsm_128.pdf}
 \par\medskip
-\includegraphics[width=\linewidth]{figs/record_length_rmse_example_1_fsm_fsm_128.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_rmse_example_1_fsm_fsm_128.pdf}
 \caption{Example~1, FSM with $128$ coefficients and $1024$ frequency
 samples: signed mean errors and pointwise $95\%$ Monte Carlo intervals
 (upper panel, linear vertical scale), and RMSEs (lower panel,
-logarithmic vertical scale). Mean-error axes are capped at $[-1,1]$;
-outlying values and error-bar portions are clipped. Summaries exclude
-failed fits.}
+logarithmic vertical scale). Display conventions follow
+Fig.~\ref{fig:bias_ex1_pl}. Summaries exclude failed fits.}
 \label{fig:bias_ex1_fsm128}
 \end{figure}
 
 \begin{figure}[p]
 \centering
-\includegraphics[width=\linewidth]{figs/record_length_bias_example_CSTR_pl_recursive_PL.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_bias_example_CSTR_pl_recursive_PL.pdf}
 \par\medskip
-\includegraphics[width=\linewidth]{figs/record_length_rmse_example_CSTR_pl_recursive_PL.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_rmse_example_CSTR_pl_recursive_PL.pdf}
 \caption{CSTR, PL: signed mean parameter errors with pointwise
 $95\%$ Monte Carlo intervals (upper panel, linear vertical scale), and
-parameter RMSEs (lower panel, logarithmic vertical scale). Mean-error
-axes are capped at $[-1,1]$. Finite stalled and iteration-limited
-outputs are retained.}
+parameter RMSEs (lower panel, logarithmic vertical scale).
+Display conventions follow Fig.~\ref{fig:bias_ex1_pl}.}
 \label{fig:bias_cstr_pl}
 \end{figure}
 
 \begin{figure}[p]
 \centering
-\includegraphics[width=\linewidth]{figs/record_length_bias_example_CSTR_fsm_fsm_128.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_bias_example_CSTR_fsm_fsm_128.pdf}
 \par\medskip
-\includegraphics[width=\linewidth]{figs/record_length_rmse_example_CSTR_fsm_fsm_128.pdf}
+\includegraphics[width=.92\linewidth]{figs/record_length_rmse_example_CSTR_fsm_fsm_128.pdf}
 \caption{CSTR, FSM with $128$ coefficients and $1024$ frequency samples:
 signed mean errors and pointwise $95\%$ Monte Carlo intervals (upper
 panel, linear vertical scale), and RMSEs (lower panel, logarithmic
-vertical scale). Mean-error axes are capped at $[-1,1]$.
-Finite iteration-limited outputs are retained.}
+vertical scale). Display conventions follow Fig.~\ref{fig:bias_ex1_pl}.}
 \label{fig:bias_cstr_fsm128}
 \end{figure}

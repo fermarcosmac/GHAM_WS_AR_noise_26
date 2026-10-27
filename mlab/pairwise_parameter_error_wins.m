@@ -55,6 +55,7 @@ rows = struct([]); trial_rows = struct([]);
 for ia = 1:numel(active)
     a = active(ia);
     for ib = ia+1:numel(active)
+        % Compute the actual test statistic here!
         b = active(ib);
         joint = valid(a,:) & valid(b,:);
         x = errors(a,joint); y = errors(b,joint);
@@ -67,7 +68,7 @@ for ia = 1:numel(active)
         if any(joint)
             p = 1; conclusion = "all ties";
             if decisive>0
-                p = min(1,2*binocdf(min(wins,losses),decisive,0.5));
+                p = min(1,2*binocdf(min(wins,losses),decisive,0.5)); % compare with Binomial distribution
                 [probability,ci] = binofit(wins,decisive,alpha);
                 conclusion = "inconclusive";
             end
@@ -98,16 +99,17 @@ for ia = 1:numel(active)
     end
 end
 pairs = struct2table(rows); trials = struct2table(trial_rows);
+% now, adjust the p-values
 if ~isempty(pairs)
     raw = pairs.RawP;
     raw(~isfinite(raw)) = 1; % Retain untestable applicable pairs in family size.
     [sorted,order] = sort(raw);
-    adjusted = min(1,cummax((numel(raw):-1:1)'.*sorted));
+    adjusted = min(1,cummax((numel(raw):-1:1)'.*sorted)); % Holm's correction
     pairs.AdjustedP(order) = adjusted;
     pairs.AdjustedP(~isfinite(pairs.RawP)) = NaN;
-    pairs.Significant = pairs.AdjustedP<alpha;
+    pairs.Significant = pairs.AdjustedP<alpha;   % compare with significance threshold 
     for k = find(pairs.Significant).'
-        if pairs.WinsA(k)>pairs.WinsB(k), pairs.Winner(k)=pairs.OptimizerA(k);
+        if pairs.WinsA(k)>pairs.WinsB(k), pairs.Winner(k)=pairs.OptimizerA(k);  % store winner
         else, pairs.Winner(k)=pairs.OptimizerB(k); end
         pairs.Conclusion(k) = "significant win-frequency advantage";
     end

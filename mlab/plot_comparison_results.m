@@ -5,9 +5,13 @@ function datasets = plot_comparison_results(options)
 % Use include_initialization=false for comparisons only, or
 % study='initialization' for final-estimate boxplots and conditioning figures.
 % Paired win tests run for MONTECARLO and INITIALIZATION datasets. Use
-% statistics_only=true to export only these comparisons; win_test.enabled=false
-% disables them. win_test also accepts alpha, tie_ulps, absolute_tie_tolerance,
+% statistics_only=true to export statistical comparisons and MC normality;
+% win_test.enabled=false disables win comparisons. win_test also accepts
+% alpha, tie_ulps, absolute_tie_tolerance,
 % and expected_runs (default 30). Returned datasets contain win_comparisons.
+% MC histograms include Shapiro-Wilk tests (Python/SciPy backend for R2026a).
+% normality.enabled=false disables them; normality.python_executable selects
+% the Python executable. Other normality options: alpha, expected_runs.
 
 if nargin < 1, options = struct(); end
 
@@ -51,6 +55,7 @@ if isfield(options,'export_figures'), export_figures = options.export_figures; e
 diagnostics_only = isfield(options,'diagnostics_only') && options.diagnostics_only;
 statistics_only = get_option(options,'statistics_only',false);
 win_options = get_option(options,'win_test',struct());
+normality_options = get_option(options,'normality',struct());
 assert(~(statistics_only && diagnostics_only),'Select statistics_only or diagnostics_only.');
 
 set(groot, ...
@@ -114,6 +119,12 @@ for i = 1:numel(datasets)
         [~,datasets(i).win_comparisons,datasets(i).win_metadata] = ...
             plot_parameter_error_wins(datasets(i),fig_dir,prefix,export_figures,win_options);   % call hypothesis test here
     end
+    if is_montecarlo && ~is_initialization && get_option(normality_options,'enabled',true)
+        saved_names = cellstr_value(datasets(i).mc_summary.method_names);
+        normality_options.method_labels = display_method_labels(saved_names,datasets(i).parametrization);
+        [~,datasets(i).normality_tests,datasets(i).normality_metadata] = ...
+            plot_parameter_error_normality(datasets(i),fig_dir,prefix,export_figures,method_names,colors,normality_options);
+    end
     if statistics_only, continue; end
     if isfield(datasets(i).study,'type') && strcmp(char_value(datasets(i).study.type),'initialization')
         fig_box = plot_montecarlo_boxplots(datasets(i));
@@ -166,6 +177,8 @@ ds.experiment = loaded.experiment;
 ds.study = struct();
 ds.win_comparisons = table();
 ds.win_metadata = struct();
+ds.normality_tests = table();
+ds.normality_metadata = struct();
 if isfield(loaded,'study'), ds.study = loaded.study; end
 % Earlier initialization payloads may identify the study only through mode.
 if ~isfield(ds.study,'type') && isfield(ds.experiment,'mode') && ...

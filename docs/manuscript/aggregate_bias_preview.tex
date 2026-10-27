@@ -8,21 +8,28 @@
   \begin{center}\Large #1: #2\end{center}
   \includegraphics[width=\linewidth]{figs/record_length_aggregate_bias_#3.pdf}
   \par\medskip
-  Each panel shows the estimated aggregate bias
+  Each run first gives one overall error across the six parameters:
   \[
-    \widehat B_N=\|\widehat{\boldsymbol b}_N\|_2
-      =\left(\sum_{j=1}^{6}\widehat b_{j,N}^{\,2}\right)^{1/2},
-    \qquad
-    \widehat b_{j,N}=\frac{1}{R_N}\sum_{r\in\mathcal I_N}
-      (\widehat\theta_{j,N}^{(r)}-\theta_j^\star).
+    E_N^{(r)}=\|\widehat{\boldsymbol\theta}_N^{(r)}-
+                         \boldsymbol\theta^\star\|_2
+      =\left[\sum_{j=1}^{6}
+        (\widehat\theta_{j,N}^{(r)}-\theta_j^\star)^2\right]^{1/2}.
   \]
+  The plotted means and pointwise approximate $95\%$ Monte Carlo
+  confidence intervals across retained runs are
+  \[
+    \overline E_N=\frac{1}{R_N}\sum_{r\in\mathcal I_N}E_N^{(r)},
+    \qquad
+    \overline E_N\pm1.96\,\frac{s_{E,N}}{\sqrt{R_N}},
+  \]
+  where $s_{E,N}$ is the sample standard deviation of the per-run errors.
+  These intervals describe uncertainty in the mean overall error;
+  they are not intervals for an individual run or simultaneous bands.
   All six parameters enter on their original scale, with equal weights.
-  This is the norm of the mean-error vector; the mean norm of the
-  individual estimation errors is a different quantity.
   Finite stalled and iteration-limited outputs are retained; failed fits
-  are excluded. No Monte Carlo intervals are plotted for this aggregate.
-  Linear vertical axes start at zero and are capped at one, with tighter
-  ranges retained. Boundary triangles mark values above the display cap.
+  are excluded. Linear vertical axes start at zero and are capped at one,
+  with tighter ranges retained. Points and interval portions outside the
+  display range are clipped; boundary triangles mark clipped means.
   #4
   \clearpage}
 \begin{document}

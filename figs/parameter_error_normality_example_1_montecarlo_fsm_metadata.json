@@ -1,0 +1,11 @@
+{
+  "Study": "montecarlo",
+  "Metric": "100*norm(theta_hat-theta_true,2)/norm(theta_true,2)",
+  "Alpha": 0.05,
+  "Adjustment": "Holm within benchmark/parametrization across testable optimizers",
+  "FamilySize": 8,
+  "Engine": "scipy.stats.shapiro",
+  "EngineVersion": "1.13.1",
+  "Interpretation": "Non-rejection does not establish normality; all finite extreme values retained",
+  "SourceFile": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_1\\comparison_fsm_montecarlo.mat"
+}
