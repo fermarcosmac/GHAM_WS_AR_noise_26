@@ -1,6 +1,8 @@
 \documentclass[11pt]{article}
 \usepackage[a4paper,margin=25mm]{geometry}
 \usepackage{amsmath,amssymb}
+\usepackage{graphicx,booktabs}
+\graphicspath{{../../}}
 % The manuscript normally supplies amsthm. The fallback keeps this preview
 % buildable in a minimal LaTeX installation without downloading packages.
 \IfFileExists{amsthm.sty}{\usepackage{amsthm}}{%
@@ -20,6 +22,7 @@
 \begin{document}
 \appendix
 \input{appendix_bias_analysis}
+\clearpage
 \bibliographystyle{plain}
 \bibliography{bias_analysis_references}
 \end{document}

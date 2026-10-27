@@ -1,6 +1,7 @@
-function [figures, outcome_report] = plot_record_length_study(payload, options)
-% Plot bias/RMSE with boxed axes and show outcome counts/percentages as tables.
+function [figures, outcome_report, aggregate_report] = plot_record_length_study(payload, options)
+% Plot parameter bias/RMSE, outcomes, and aggregate bias by optimizer.
 % The optional second output is a numeric table, also exported as a separate CSV.
+% Aggregate figures are appended after the existing three figures per resolution.
 if nargin<2, options=struct(); end
 if ischar(payload) || isstring(payload), payload=load(payload); end
 s = payload.study; backend=char(payload.parametrization);
@@ -47,9 +48,22 @@ for c=1:C
                         'Color',colors(m,:),'DisplayName',latex_literal(method_figure_label(names{m})));
                 end
             end
-            ax.XScale='log'; grid(ax,'on'); box(ax,'on'); xlabel(ax,'Record length $N$','Interpreter','latex');
-            if strcmp(field,'bias'), yline(ax,0,'k--','HandleVisibility','off'); ylabel(ax,'Signed mean error','Interpreter','latex');
-            else, ylabel(ax,'Parameter RMSE','Interpreter','latex'); end
+            ax.XScale='log'; grid(ax,'on'); box(ax,'on');
+            if p>3*(ceil(P/3)-1)
+                xlabel(ax,'Record length $N$','Interpreter','latex');
+            end
+            if strcmp(field,'bias')
+                yline(ax,0,'k--','HandleVisibility','off');
+                % Keep tight automatic ranges, but cap extreme-value axes.
+                limits=ylim(ax);
+                bounded_limits=[max(limits(1),-1),min(limits(2),1)];
+                if bounded_limits(1)>=bounded_limits(2), bounded_limits=[-1 1]; end
+                ylim(ax,bounded_limits);
+                if mod(p-1,3)==0, ylabel(ax,'Signed mean error','Interpreter','latex'); end
+            else
+                ax.YScale='log';
+                if mod(p-1,3)==0, ylabel(ax,'Parameter RMSE','Interpreter','latex'); end
+            end
             title(ax,['$' labels{p} '$'],'Interpreter','latex');
             if p==1
                 lg=legend(ax,'Interpreter','latex','NumColumns',3); lg.Layout.Tile='south';
@@ -95,6 +109,8 @@ if export
         'Bias','MCSE','CILow','CIHigh','Variance','RMSE','Used','Finite','Converged','FailedOrSkipped'});
     writetable(report,fullfile(folder,['record_length_' char(payload.experiment_name) '_' lower(backend) '.csv']));
 end
+[aggregate_figures,aggregate_report]=plot_record_length_aggregate_bias(payload,options);
+figures=[figures aggregate_figures.'];
 end
 
 function report=build_outcome_report(backend,resolutions,lengths,names,trials, ...

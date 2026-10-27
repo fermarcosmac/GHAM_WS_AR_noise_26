@@ -1,0 +1,38 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=20mm]{geometry}
+\usepackage{amsmath,amssymb,graphicx}
+\graphicspath{{../../}}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{2em}
+\newcommand{\biaspage}[4]{%
+  \begin{center}\Large #1: #2\end{center}
+  \includegraphics[width=\linewidth]{figs/record_length_aggregate_bias_#3.pdf}
+  \par\medskip
+  Each panel shows the estimated aggregate bias
+  \[
+    \widehat B_N=\|\widehat{\boldsymbol b}_N\|_2
+      =\left(\sum_{j=1}^{6}\widehat b_{j,N}^{\,2}\right)^{1/2},
+    \qquad
+    \widehat b_{j,N}=\frac{1}{R_N}\sum_{r\in\mathcal I_N}
+      (\widehat\theta_{j,N}^{(r)}-\theta_j^\star).
+  \]
+  All six parameters enter on their original scale, with equal weights.
+  This is the norm of the mean-error vector; the mean norm of the
+  individual estimation errors is a different quantity.
+  Finite stalled and iteration-limited outputs are retained; failed fits
+  are excluded. No Monte Carlo intervals are plotted for this aggregate.
+  Linear vertical axes start at zero and are capped at one, with tighter
+  ranges retained. Boundary triangles mark values above the display cap.
+  #4
+  \clearpage}
+\begin{document}
+\biaspage{Example 1}{PL}{example_1_pl_recursive_PL}{}
+\biaspage{Example 1}{FSM, 128 coefficients}{example_1_fsm_fsm_128}%
+  {For GHAM-2-I, the retained counts are shown in record-length order;
+   the final point summarizes only 7 of 100 runs.}
+\biaspage{CSTR}{PL}{example_CSTR_pl_recursive_PL}{}
+\biaspage{CSTR}{FSM, 128 coefficients}{example_CSTR_fsm_fsm_128}{}
+\biaspage{Example 1}{FSM, 256 coefficients}{example_1_fsm_fsm_256}%
+  {For GHAM-2-I, the final point summarizes only 7 of 100 runs.}
+\biaspage{CSTR}{FSM, 256 coefficients}{example_CSTR_fsm_fsm_256}{}
+\end{document}

@@ -277,7 +277,7 @@ def run_record_length_study(cfg, study, *, experiment_name="example_CSTR", outpu
 
 def main(kind):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--experiment", default="example_CSTR")
+    parser.add_argument("--experiment", default="example_1")
     parser.add_argument("--study-config", type=Path, default=ROOT/"configs"/"studies.json")
     parser.add_argument("--runs", type=int)
     parser.add_argument("--iterations", type=int)

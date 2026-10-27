@@ -1,0 +1,173 @@
+% Requires amsmath, amssymb, booktabs, and graphicx; merge win_test_references.bib.
+% Generated from verified MATLAB CSV exports by python/report_parameter_error_wins.py.
+\subsection{Statistical comparison across independent realizations}
+\label{subsec:montecarlo_win_tests}
+For each benchmark and parametrization, the optimizers were compared using
+the same 30 independent input/noise realizations. The outcome for rule $a$
+in realization $r$ was the final relative parameter error
+\begin{equation}
+ E_{a,r}=100\frac{\|\hat{\boldsymbol\theta}_{a,r}-\boldsymbol\theta^\star\|_2}
+ {\|\boldsymbol\theta^\star\|_2}.
+\end{equation}
+For every unordered pair $(a,b)$, we counted the realizations in which each
+rule produced the lower error and performed a two-sided exact paired sign
+test~\cite{DixonMood1946}. Under the null hypothesis of equal win probabilities,
+$W_{ab}\mid(W_{ab}+L_{ab})\sim\operatorname{Binomial}(W_{ab}+L_{ab},1/2)$;
+ties were excluded from the binomial count. Numerical ties were defined by
+$|E_{a,r}-E_{b,r}|\leq10\,\operatorname{eps}(\max\{1,E_{a,r},E_{b,r}\})$,
+where $\operatorname{eps}(x)$ denotes floating-point spacing at $x$.
+All finite outcomes, including extreme values, were retained. Each group
+contained eight applicable rules and 28 comparisons; Holm's
+correction~\cite{Holm1979} controlled the family-wise error rate at $0.05$
+separately within each benchmark--parametrization combination.
+Superiority denotes a significantly greater frequency of lower errors;
+the test does not establish a lower arithmetic mean or a practically
+important reduction. The legacy Monte Carlo files preserve pairing by
+realization column, but do not contain per-run hashes for retrospective
+verification. All applicable rules have 30 finite outcomes in these files.
+
+Tables~\ref{tab:win_montecarlo_example_1_fsm}--\ref{tab:win_montecarlo_example_cstr_pl}
+report all pairwise outcomes. For Example~1/FSM, none of the 28 comparisons
+remained significant. For Example~1/PL, GHAM-2-I and LHAM-1-TIK outperformed
+WS-GGI in 28/30 and 25/30 realizations, respectively
+($p_{\mathrm H}=2.43\times10^{-5}$ and $8.77\times10^{-3}$); the other
+26 comparisons were inconclusive. For CSTR/FSM, 26 comparisons were
+significant. LHAM-1-TIK and LHAM-3-TIK each outperformed GI and all evaluated
+GHAM rules, but neither showed a significant advantage over Newton
+($p_{\mathrm H}=0.585$ and $0.401$). LHAM-1-TIK outperformed LHAM-3-TIK
+in 23/30 realizations ($p_{\mathrm H}=0.0157$), although their median paired
+error difference was only $1.97\times10^{-4}$ percentage points in favor
+of LHAM-1-TIK. For CSTR/PL, 18 comparisons were significant; WS-GNI,
+RLS, GHAM-1-dH, and GHAM-2-dH each outperformed LHAM-1-TIK in 27/30
+realizations ($p_{\mathrm H}=1.26\times10^{-4}$).
+Thus, the evidence supports specific update-rule advantages and does not
+establish one optimizer as uniformly superior. Inconclusive comparisons
+do not establish equivalence.
+
+\begin{table}[!htbp]
+\centering
+\caption{Pairwise Monte Carlo results: Example 1, FSM. Each upper-triangular entry gives row wins:losses:ties, followed by the Holm-adjusted $p$-value. $\uparrow$ denotes a significant advantage for the row rule; $\downarrow$ for the column rule. An unmarked $p$-value is inconclusive at $\alpha=0.05$.}
+\label{tab:win_montecarlo_example_1_fsm}
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.12}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}l*{8}{c}@{}}
+\toprule
+Rule [valid/30] & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+\midrule
+1: Newton [30/30] & -- & \shortstack{$17{:}13{:}0$\\$1$} & \shortstack{$13{:}17{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$17{:}13{:}0$\\$1$} & \shortstack{$17{:}13{:}0$\\$1$} \\
+2: GI [30/30] &  & -- & \shortstack{$13{:}17{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$14{:}16{:}0$\\$1$} \\
+3: GHAM-1-dH [30/30] &  &  & -- & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$17{:}13{:}0$\\$1$} & \shortstack{$17{:}13{:}0$\\$1$} \\
+4: GHAM-2-dH [30/30] &  &  &  & -- & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} \\
+5: GHAM-2-H [30/30] &  &  &  &  & -- & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} \\
+6: GHAM-2-I [30/30] &  &  &  &  &  & -- & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} \\
+7: LHAM-1-TIK [30/30] &  &  &  &  &  &  & -- & \shortstack{$16{:}14{:}0$\\$1$} \\
+8: LHAM-3-TIK [30/30] &  &  &  &  &  &  &  & -- \\
+\bottomrule
+\end{tabular}%
+}
+\endgroup
+\par\smallskip
+\begin{minipage}{\linewidth}\footnotesize
+The valid count includes finite usable estimates; a paired test uses only jointly valid runs. Its effective binomial sample size is wins plus losses. All finite extreme values are retained. Blank lower-triangular cells omit symmetric duplicates.
+Unavailable rule: RLS.
+\end{minipage}
+\end{table}
+
+\begin{table}[!htbp]
+\centering
+\caption{Pairwise Monte Carlo results: Example 1, PL. Each upper-triangular entry gives row wins:losses:ties, followed by the Holm-adjusted $p$-value. $\uparrow$ denotes a significant advantage for the row rule; $\downarrow$ for the column rule. An unmarked $p$-value is inconclusive at $\alpha=0.05$.}
+\label{tab:win_montecarlo_example_1_pl}
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.12}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}l*{8}{c}@{}}
+\toprule
+Rule [valid/30] & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+\midrule
+1: RLS [30/30] & -- & \shortstack{$16{:}14{:}0$\\$1$} & \shortstack{$22{:}8{:}0$\\$0.419$} & \shortstack{$12{:}18{:}0$\\$1$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$9{:}21{:}0$\\$0.941$} & \shortstack{$11{:}19{:}0$\\$1$} & \shortstack{$12{:}18{:}0$\\$1$} \\
+2: WS-GNI [30/30] &  & -- & \shortstack{$22{:}8{:}0$\\$0.419$} & \shortstack{$13{:}17{:}0$\\$1$} & \shortstack{$13{:}17{:}0$\\$1$} & \shortstack{$9{:}21{:}0$\\$0.941$} & \shortstack{$11{:}19{:}0$\\$1$} & \shortstack{$12{:}18{:}0$\\$1$} \\
+3: WS-GGI [30/30] &  &  & -- & \shortstack{$8{:}22{:}0$\\$0.419$} & \shortstack{$8{:}22{:}0$\\$0.419$} & \shortstack{$2{:}28{:}0$\\$\downarrow\,2.4\!\times\!10^{-5}$} & \shortstack{$5{:}25{:}0$\\$\downarrow\,0.00877$} & \shortstack{$10{:}20{:}0$\\$1$} \\
+4: GHAM-1-dH [30/30] &  &  &  & -- & \shortstack{$16{:}14{:}0$\\$1$} & \shortstack{$9{:}21{:}0$\\$0.941$} & \shortstack{$11{:}19{:}0$\\$1$} & \shortstack{$12{:}18{:}0$\\$1$} \\
+5: GHAM-2-dH [30/30] &  &  &  &  & -- & \shortstack{$9{:}21{:}0$\\$0.941$} & \shortstack{$11{:}19{:}0$\\$1$} & \shortstack{$12{:}18{:}0$\\$1$} \\
+6: GHAM-2-I [30/30] &  &  &  &  &  & -- & \shortstack{$16{:}14{:}0$\\$1$} & \shortstack{$19{:}11{:}0$\\$1$} \\
+7: LHAM-1-TIK [30/30] &  &  &  &  &  &  & -- & \shortstack{$19{:}11{:}0$\\$1$} \\
+8: LHAM-3-TIK [30/30] &  &  &  &  &  &  &  & -- \\
+\bottomrule
+\end{tabular}%
+}
+\endgroup
+\par\smallskip
+\begin{minipage}{\linewidth}\footnotesize
+The valid count includes finite usable estimates; a paired test uses only jointly valid runs. Its effective binomial sample size is wins plus losses. All finite extreme values are retained. Blank lower-triangular cells omit symmetric duplicates.
+Unavailable rule: GHAM-2-H.
+\end{minipage}
+\end{table}
+
+\begin{table}[!htbp]
+\centering
+\caption{Pairwise Monte Carlo results: CSTR, FSM. Each upper-triangular entry gives row wins:losses:ties, followed by the Holm-adjusted $p$-value. $\uparrow$ denotes a significant advantage for the row rule; $\downarrow$ for the column rule. An unmarked $p$-value is inconclusive at $\alpha=0.05$.}
+\label{tab:win_montecarlo_example_cstr_fsm}
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.12}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}l*{8}{c}@{}}
+\toprule
+Rule [valid/30] & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+\midrule
+1: Newton [30/30] & -- & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$13{:}17{:}0$\\$0.585$} & \shortstack{$19{:}11{:}0$\\$0.401$} \\
+2: GI [30/30] &  & -- & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} \\
+3: GHAM-1-dH [30/30] &  &  & -- & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} \\
+4: GHAM-2-dH [30/30] &  &  &  & -- & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} \\
+5: GHAM-2-H [30/30] &  &  &  &  & -- & \shortstack{$29{:}1{:}0$\\$\uparrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} \\
+6: GHAM-2-I [30/30] &  &  &  &  &  & -- & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} & \shortstack{$1{:}29{:}0$\\$\downarrow\,1.5\!\times\!10^{-6}$} \\
+7: LHAM-1-TIK [30/30] &  &  &  &  &  &  & -- & \shortstack{$23{:}7{:}0$\\$\uparrow\,0.0157$} \\
+8: LHAM-3-TIK [30/30] &  &  &  &  &  &  &  & -- \\
+\bottomrule
+\end{tabular}%
+}
+\endgroup
+\par\smallskip
+\begin{minipage}{\linewidth}\footnotesize
+The valid count includes finite usable estimates; a paired test uses only jointly valid runs. Its effective binomial sample size is wins plus losses. All finite extreme values are retained. Blank lower-triangular cells omit symmetric duplicates.
+Unavailable rule: RLS.
+\end{minipage}
+\end{table}
+
+\begin{table}[!htbp]
+\centering
+\caption{Pairwise Monte Carlo results: CSTR, PL. Each upper-triangular entry gives row wins:losses:ties, followed by the Holm-adjusted $p$-value. $\uparrow$ denotes a significant advantage for the row rule; $\downarrow$ for the column rule. An unmarked $p$-value is inconclusive at $\alpha=0.05$.}
+\label{tab:win_montecarlo_example_cstr_pl}
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.12}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}l*{8}{c}@{}}
+\toprule
+Rule [valid/30] & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+\midrule
+1: RLS [30/30] & -- & \shortstack{$18{:}12{:}0$\\$1$} & \shortstack{$30{:}0{:}0$\\$\uparrow\,5.2\!\times\!10^{-8}$} & \shortstack{$15{:}15{:}0$\\$1$} & \shortstack{$16{:}14{:}0$\\$1$} & \shortstack{$30{:}0{:}0$\\$\uparrow\,5.2\!\times\!10^{-8}$} & \shortstack{$27{:}3{:}0$\\$\uparrow\,1.3\!\times\!10^{-4}$} & \shortstack{$22{:}8{:}0$\\$0.161$} \\
+2: WS-GNI [30/30] &  & -- & \shortstack{$30{:}0{:}0$\\$\uparrow\,5.2\!\times\!10^{-8}$} & \shortstack{$14{:}16{:}0$\\$1$} & \shortstack{$16{:}14{:}0$\\$1$} & \shortstack{$30{:}0{:}0$\\$\uparrow\,5.2\!\times\!10^{-8}$} & \shortstack{$27{:}3{:}0$\\$\uparrow\,1.3\!\times\!10^{-4}$} & \shortstack{$22{:}8{:}0$\\$0.161$} \\
+3: WS-GGI [30/30] &  &  & -- & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} & \shortstack{$30{:}0{:}0$\\$\uparrow\,5.2\!\times\!10^{-8}$} & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} \\
+4: GHAM-1-dH [30/30] &  &  &  & -- & \shortstack{$16{:}14{:}0$\\$1$} & \shortstack{$30{:}0{:}0$\\$\uparrow\,5.2\!\times\!10^{-8}$} & \shortstack{$27{:}3{:}0$\\$\uparrow\,1.3\!\times\!10^{-4}$} & \shortstack{$22{:}8{:}0$\\$0.161$} \\
+5: GHAM-2-dH [30/30] &  &  &  &  & -- & \shortstack{$30{:}0{:}0$\\$\uparrow\,5.2\!\times\!10^{-8}$} & \shortstack{$27{:}3{:}0$\\$\uparrow\,1.3\!\times\!10^{-4}$} & \shortstack{$22{:}8{:}0$\\$0.161$} \\
+6: GHAM-2-I [30/30] &  &  &  &  &  & -- & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} & \shortstack{$0{:}30{:}0$\\$\downarrow\,5.2\!\times\!10^{-8}$} \\
+7: LHAM-1-TIK [30/30] &  &  &  &  &  &  & -- & \shortstack{$3{:}27{:}0$\\$\downarrow\,1.3\!\times\!10^{-4}$} \\
+8: LHAM-3-TIK [30/30] &  &  &  &  &  &  &  & -- \\
+\bottomrule
+\end{tabular}%
+}
+\endgroup
+\par\smallskip
+\begin{minipage}{\linewidth}\footnotesize
+The valid count includes finite usable estimates; a paired test uses only jointly valid runs. Its effective binomial sample size is wins plus losses. All finite extreme values are retained. Blank lower-triangular cells omit symmetric duplicates.
+Unavailable rule: GHAM-2-H.
+\end{minipage}
+\end{table}

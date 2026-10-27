@@ -4,6 +4,10 @@ function datasets = plot_comparison_results(options)
 % Default selection includes available initialization files for the experiment.
 % Use include_initialization=false for comparisons only, or
 % study='initialization' for final-estimate boxplots and conditioning figures.
+% Paired win tests run for MONTECARLO and INITIALIZATION datasets. Use
+% statistics_only=true to export only these comparisons; win_test.enabled=false
+% disables them. win_test also accepts alpha, tie_ulps, absolute_tie_tolerance,
+% and expected_runs (default 30). Returned datasets contain win_comparisons.
 
 if nargin < 1, options = struct(); end
 
@@ -45,6 +49,9 @@ end
 if isfield(options,'fig_dir'), fig_dir = options.fig_dir; end
 if isfield(options,'export_figures'), export_figures = options.export_figures; end
 diagnostics_only = isfield(options,'diagnostics_only') && options.diagnostics_only;
+statistics_only = get_option(options,'statistics_only',false);
+win_options = get_option(options,'win_test',struct());
+assert(~(statistics_only && diagnostics_only),'Select statistics_only or diagnostics_only.');
 
 set(groot, ...
     'defaultTextInterpreter', 'latex', ...
@@ -95,8 +102,19 @@ for i = 1:numel(datasets)
     if isfield(datasets(i).experiment,'name'), experiment_tag = lower(sanitize_filename(char_value(datasets(i).experiment.name))); end
     if isfield(datasets(i).experiment,'mode'), mode_tag = lower(sanitize_filename(char_value(datasets(i).experiment.mode))); end
     prefix = sprintf('%s_%s_%s',experiment_tag,mode_tag,parametrization_tag);
-    plot_optimization_diagnostics(datasets(i),fig_dir,prefix,export_figures,method_names,colors);
+    if ~statistics_only
+        plot_optimization_diagnostics(datasets(i),fig_dir,prefix,export_figures,method_names,colors);
+    end
     if diagnostics_only, continue; end
+    is_initialization = isfield(datasets(i).study,'type') && strcmpi(char_value(datasets(i).study.type),'initialization');
+    is_montecarlo = isfield(datasets(i).experiment,'mode') && strcmpi(char_value(datasets(i).experiment.mode),'MONTECARLO');
+    if (is_initialization || is_montecarlo) && get_option(win_options,'enabled',true)
+        saved_names = cellstr_value(datasets(i).mc_summary.method_names);
+        win_options.method_labels = display_method_labels(saved_names,datasets(i).parametrization);
+        [~,datasets(i).win_comparisons,datasets(i).win_metadata] = ...
+            plot_parameter_error_wins(datasets(i),fig_dir,prefix,export_figures,win_options);   % call hypothesis test here
+    end
+    if statistics_only, continue; end
     if isfield(datasets(i).study,'type') && strcmp(char_value(datasets(i).study.type),'initialization')
         fig_box = plot_montecarlo_boxplots(datasets(i));
         export_if_requested(fig_box,fig_dir,['initialization_parameter_boxplots_' prefix '.pdf'],export_figures);
@@ -146,6 +164,8 @@ ds.parametrization = char_value(loaded.parametrization);
 ds.generated_at = char_value(loaded.generated_at);
 ds.experiment = loaded.experiment;
 ds.study = struct();
+ds.win_comparisons = table();
+ds.win_metadata = struct();
 if isfield(loaded,'study'), ds.study = loaded.study; end
 % Earlier initialization payloads may identify the study only through mode.
 if ~isfield(ds.study,'type') && isfield(ds.experiment,'mode') && ...
@@ -258,6 +278,13 @@ tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'comp
 for p = 1:n_params
     ax = nexttile(tl);
     values = reshape(errors(:,:,p),numel(method_names),[]).';
+    tick_labels = method_labels;
+    if initialization_study
+        [values, removed_counts] = remove_extreme_boxplot_outliers(values);
+        for m = 1:numel(method_labels)
+            tick_labels{m} = sprintf('%s (%d)',method_labels{m},removed_counts(m));
+        end
+    end
     if any(isfinite(values),'all')
         if initialization_study
             groups=repmat(1:numel(method_names),size(values,1),1);
@@ -271,7 +298,7 @@ for p = 1:n_params
         xticks(ax,1:numel(method_labels)); xticklabels(ax,method_labels);
     end
     if initialization_study
-        xticks(ax,1:numel(method_labels)); xticklabels(ax,method_labels); xtickangle(ax,40);
+        xticks(ax,1:numel(tick_labels)); xticklabels(ax,tick_labels); xtickangle(ax,40);
         xlim(ax,[.5 numel(method_labels)+.5]);
         set(ax,'TickLabelInterpreter','none','FontSize',8);
     end
@@ -288,7 +315,14 @@ for p = 1:n_params
     else
         title(ax, sprintf('$\\theta_%d$ final error', p));
     end
-    if ~initialization_study, ylim(ax, robust_axis_limits(values(:), 0)); end
+    if initialization_study
+        set(ax,'Color','w','XColor','k','YColor','k','GridColor',[.6 .6 .6]);
+        ax.Title.Color = 'k';
+        ax.YLabel.Color = 'k';
+        ylim(ax, initialization_boxplot_limits(values, reference));
+    else
+        ylim(ax, robust_axis_limits(values(:), 0));
+    end
 end
 
 for p = (n_params + 1):(n_rows * n_cols)
@@ -297,9 +331,41 @@ end
 
 title(tl, sprintf('%s Parametrization: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold', 'FontSize', 11);
 if initialization_study
-    title(tl,sprintf('%s: final estimates over %d initializations; fixed input/noise; dashed = truth', ...
-        dataset.parametrization,size(errors,2)),'Interpreter','none');
+    title(tl,{sprintf('%s: final estimates over %d initializations; fixed input/noise; dashed = truth', ...
+        dataset.parametrization,size(errors,2)), ...
+        'Counts in parentheses = extreme outliers removed per optimizer (outside Q1 - 3 IQR to Q3 + 3 IQR)'}, ...
+        'Interpreter','none','FontSize',10,'Color','k');
 end
+end
+
+function [values, removed_counts] = remove_extreme_boxplot_outliers(values)
+% Filter each optimizer/parameter independently, using the outer Tukey fences.
+% Nonfinite outcomes do not count as removed outliers; saved data is unchanged.
+removed_counts = zeros(1,size(values,2));
+for m = 1:size(values,2)
+    finite_values = values(isfinite(values(:,m)),m);
+    if numel(finite_values) < 4, continue; end
+    quartiles = prctile(finite_values,[25 75]);
+    spread = quartiles(2) - quartiles(1);
+    tolerance = 10 * eps(max([1 abs(quartiles)]));
+    extreme = isfinite(values(:,m)) & ...
+        (values(:,m) < quartiles(1) - 3*spread - tolerance | ...
+         values(:,m) > quartiles(2) + 3*spread + tolerance);
+    removed_counts(m) = sum(extreme);
+    values(extreme,m) = NaN;
+end
+end
+
+function limits = initialization_boxplot_limits(values, reference)
+values = [values(isfinite(values)); reference];
+lo = min(values);
+hi = max(values);
+if hi > lo
+    pad = 0.10 * (hi - lo);
+else
+    pad = 0.10 * max(1,abs(reference));
+end
+limits = [lo - pad, hi + pad];
 end
 
 function fig = plot_initialization_outcomes(dataset)

@@ -6,7 +6,7 @@
 
 repo_root = pwd; % call from repo root!
 addpath([repo_root '\mlab']);
-experiment_name = 'example_CSTR'; % 'example_1' or 'example_CSTR'
+experiment_name = 'example_1'; % 'example_1' or 'example_CSTR'
 base_cfg = jsondecode(fileread(fullfile(repo_root,'configs',[experiment_name '.json'])));
 results_dir = fullfile(repo_root,'results',experiment_name);
 fig_dir = fullfile(repo_root,'figs');
@@ -88,9 +88,9 @@ payload = record_length_study(experiment_name,options);
 
 %% Plot initialization studies only: final estimates, outcomes, conditioning
 % Includes parameter-estimate boxplots with dashed true-parameter references.
-% datasets = plot_comparison_results(struct('study','initialization', ...
-%     'experiment_name',experiment_name,'fig_dir',fig_dir, ...
-%     'export_figures',export_figures));
+datasets = plot_comparison_results(struct('study','initialization', ...
+    'experiment_name',experiment_name,'fig_dir',fig_dir, ...
+    'export_figures',export_figures));
 
 %% Plot record-length studies only: signed bias, RMSE, outcome tables
 % Reads record_length_pl.mat and record_length_fsm.mat when available.
