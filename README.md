@@ -276,8 +276,21 @@ final estimates, statuses, signed bias, variance, parameter RMSE, Monte Carlo
 standard errors, outcome counts, seeds, and resolved settings. By default,
 `save_case_results: true` also saves full histories in `noise_<pl|fsm>_sigma01.mat`
 through `_sigma05.mat`; the second case has `sigma_nu = 0.1`. These per-level files
-work with `plot_comparison_results` through explicit `data_files`. The aggregate
-is for analysis of the sweep; see [array dimensions](docs/identification_studies.md#noise-sensitivity-paired-records-fixed-initialization).
+work with `plot_comparison_results` through explicit `data_files`.
+Plot the complete saved sweep for both parametrizations with:
+
+```matlab
+plot_comparison_results(struct('study','noise','experiment_name','example_1', ...
+    'fig_dir',fullfile(pwd,'figs'),'export_figures',true));
+```
+
+This shows final relative parameter error per optimizer and parameter estimates
+against innovation standard deviation. Single runs show individual estimates;
+repeated runs show means with Monte Carlo intervals when at least two runs are
+retained. Dashed lines mark the true parameters. Exports include separate PL/FSM
+PDFs and CSV summaries with outcome counts. The direct helper is
+`plot_noise_study(payload_or_filename, options)`. See
+[array dimensions](docs/identification_studies.md#noise-sensitivity-paired-records-fixed-initialization).
 
 Override `sigma_nu_values`, `theta0`, `n_runs`, `data_seed`, `summary_population`,
 and `save_case_results` in the study block or MATLAB `options.study`. Python also
@@ -675,6 +688,7 @@ addpath('mlab');
 test_comparison_diagnostics;
 test_identification_studies;
 test_noise_study;
+test_plot_noise_study;
 % Optional cross-backend import/plot checks on freshly generated Python files:
 test_comparison_diagnostics('path/to/fsm_result.mat');
 test_identification_studies('path/to/initialization_fsm.mat', ...

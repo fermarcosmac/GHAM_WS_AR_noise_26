@@ -170,18 +170,40 @@ diagnostics, and per-run noise-level metadata. Indices follow `sigma_nu_values`;
 the second default file uses 0.1. Custom output filenames supply the corresponding
 prefix. Set `save_case_results` false for aggregate-only runs.
 
-Plot individual levels using the existing plotter with explicit files:
+Plot the complete sweep for both parametrizations without running identification:
+
+```matlab
+plot_comparison_results(struct('study','noise','experiment_name','example_1', ...
+    'fig_dir',fullfile('figs','local'),'export_figures',true));
+```
+
+This reads `noise_pl.mat` and `noise_fsm.mat`. Each backend has a figure of final
+relative parameter error versus innovation standard deviation, with one panel
+per optimizer, and a figure of final parameter estimates with dashed true-value
+references. The default single run shows points and curves without MC intervals.
+With repeated runs, plots show means and pointwise approximate 95% MC intervals
+only where at least two estimates are retained. Overall error averages the
+per-run relative norms, `100*norm(theta_hat-theta_true)/norm(theta_true)`.
+The configured summary population is respected; failed/skipped estimates are
+excluded and retained counts are shown where fits are missing.
+
+Exports are `noise_error_<experiment>_<pl|fsm>.pdf`,
+`noise_estimates_<experiment>_<pl|fsm>.pdf`, and
+`noise_summary_<experiment>_<pl|fsm>.csv`. The CSV includes retained counts and
+optimization outcomes at each level. Direct use is
+`[figures, report] = plot_noise_study(payload_or_filename, options)`.
+
+Plot individual levels using the comparison plotter with explicit files:
 
 ```matlab
 files = {fullfile('results','example_1','noise_pl_sigma02.mat'), ...
          fullfile('results','example_1','noise_fsm_sigma02.mat')};
 plot_comparison_results(struct('data_files',{files}, ...
-    'fig_dir',fullfile('figs','local','noise_sigma02')));
+    'fig_dir',fullfile('figs','local','noise_sigma02'), ...
+    'win_test',struct('enabled',false),'normality',struct('enabled',false)));
 ```
 
-The aggregate sweep is not a comparison payload; use the per-level files with
-the comparison plotter. Matching seed numbers across MATLAB and Python do not
-produce identical records.
+Matching seed numbers across MATLAB and Python do not produce identical records.
 
 ## Record length, independent data, fixed initialization
 
@@ -286,6 +308,7 @@ python -B -m unittest discover -s python -p "test_*.py" -v
 addpath('mlab');
 test_identification_studies;
 test_noise_study;
+test_plot_noise_study;
 % Optional: exercise MATLAB plots on freshly generated FSM study files:
 test_identification_studies('path/to/initialization_fsm.mat','path/to/record_length_fsm.mat');
 ```

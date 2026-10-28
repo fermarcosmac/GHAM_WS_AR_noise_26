@@ -6,7 +6,7 @@
 
 repo_root = pwd; % call from repo root!
 addpath([repo_root '\mlab']);
-experiment_name = 'example_CSTR'; % 'example_1' or 'example_CSTR'
+experiment_name = 'example_1'; % 'example_1' or 'example_CSTR'
 base_cfg = jsondecode(fileread(fullfile(repo_root,'configs',[experiment_name '.json'])));
 results_dir = fullfile(repo_root,'results',experiment_name);
 fig_dir = fullfile(repo_root,'figs');
@@ -86,11 +86,20 @@ payload = noise_study(experiment_name);
 %     'output_file',fullfile(local_results_dir,'noise_pl_short.mat'));
 % payload = noise_study(experiment_name,options);
 
+%% Plot noise sensitivity: all five levels for both PL and FSM
+% Reads noise_pl.mat and noise_fsm.mat; no identification runs.
+% Final relative parameter error per optimizer, plus parameter estimates.
+% With n_runs=1, plots the individual outcomes without Monte Carlo intervals.
+plot_comparison_results(struct('study','noise', ...
+    'experiment_name',experiment_name,'fig_dir',fig_dir, ...
+    'export_figures',export_figures));
+
 %% Plot one noise level using the existing comparison plotter (PL or FSM)
 % data_files = {fullfile(results_dir,'noise_pl_sigma02.mat'), ...
 %               fullfile(results_dir,'noise_fsm_sigma02.mat')}; % sigma_nu = 0.1
 % plot_comparison_results(struct('data_files',{data_files}, ...
-%     'fig_dir',local_fig_dir,'export_figures',export_figures));
+%     'fig_dir',fullfile(local_fig_dir,'noise_sigma02'),'export_figures',export_figures, ...
+%     'win_test',struct('enabled',false),'normality',struct('enabled',false)));
 
 %% Plot saved Monte Carlo comparisons AND available initialization studies
 % Loads PL and FSM results for the selected benchmark. No identification runs.
@@ -139,7 +148,7 @@ plot_comparison_results(struct('study','record_length', ...
 %     'fig_dir',fig_dir,'export_figures',export_figures));
 
 %% Plot explicit files (PL, FSM, or custom/local outputs)
-% The plotter detects comparison, initialization, or record-length payloads.
+% The plotter detects comparison, initialization, record-length, or noise payloads.
 % data_files = {fullfile(local_results_dir,'initialization_pl_short.mat')};
 % datasets = plot_comparison_results(struct('data_files',{data_files}, ...
 %     'fig_dir',local_fig_dir,'export_figures',export_figures));
@@ -175,6 +184,7 @@ plot_comparison_results(struct('study','record_length', ...
 % test_comparison_diagnostics;
 % test_identification_studies;
 % test_noise_study;
+% test_plot_noise_study;
 % Optional checks on actual Python study files:
 % test_identification_studies(fullfile(results_dir,'initialization_fsm.mat'), ...
 %     fullfile(results_dir,'record_length_fsm.mat'));

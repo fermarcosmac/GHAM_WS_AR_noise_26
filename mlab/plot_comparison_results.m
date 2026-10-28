@@ -46,7 +46,7 @@ if isfield(options,'data_files'), data_files = options.data_files; end
 if isfield(options,'study') && ~isfield(options,'data_files')
     experiment_name = char_value(get_option(options,'experiment_name',experiment_name));
     study_name = char_value(options.study);
-    assert(ismember(study_name,{'initialization','record_length'}),'Unknown study.');
+    assert(ismember(study_name,{'initialization','record_length','noise'}),'Unknown study.');
     data_files = {fullfile(repo_root,'results',experiment_name,[study_name '_fsm.mat']), ...
                   fullfile(repo_root,'results',experiment_name,[study_name '_pl.mat'])};
 end
@@ -68,7 +68,7 @@ set(groot, ...
     'defaultLineLineWidth', 1.55);
 
 datasets = struct([]);
-record_studies_loaded = false;
+study_plots_loaded = false;
 for i = 1:numel(data_files)
     if exist(data_files{i}, 'file') ~= 2
         warning('Result file not found: %s', data_files{i});
@@ -77,7 +77,12 @@ for i = 1:numel(data_files)
     loaded = load(data_files{i});
     if isfield(loaded,'study') && strcmp(char_value(loaded.study.type),'record_length')
         plot_record_length_study(loaded,struct('fig_dir',fig_dir,'export_figures',export_figures));
-        record_studies_loaded = true;
+        study_plots_loaded = true;
+        continue;
+    end
+    if isfield(loaded,'study') && strcmp(char_value(loaded.study.type),'noise')
+        plot_noise_study(loaded,struct('fig_dir',fig_dir,'export_figures',export_figures));
+        study_plots_loaded = true;
         continue;
     end
     ds = normalize_loaded_dataset(loaded, data_files{i});
@@ -89,7 +94,7 @@ for i = 1:numel(data_files)
 end
 
 if isempty(datasets)
-    if record_studies_loaded, return; end
+    if study_plots_loaded, return; end
     error('No result files were loaded. Run the experiment scripts first.');
 end
 

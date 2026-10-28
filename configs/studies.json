@@ -15,7 +15,7 @@
     "progress": true,
     "progress_interval_seconds": 10,
     "data_seed": 271828,
-    "sigma_nu_values": [0.05, 0.1, 0.2, 0.5, 1.0],
+    "sigma_nu_values": [0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0],
     "theta0": null,
     "summary_population": "finite",
     "save_case_results": true
