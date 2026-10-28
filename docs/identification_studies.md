@@ -1,4 +1,4 @@
-# Initialization sensitivity and record-length studies
+# Initialization, noise sensitivity, and record-length studies
 
 Run these from the repository root. The existing comparison experiments and
 their output filenames are unchanged. Studies use the same configured update
@@ -7,8 +7,8 @@ comparison runners. Unimplemented methods are retained as `skipped`.
 
 ## Console progress and estimated time remaining
 
-Both studies log progress by default, independently of optimizer verbosity.
-Messages identify the current initialization/realization, record length and FSM
+All studies log progress by default, independently of optimizer verbosity.
+Messages identify the current initialization/realization, noise level, record length and FSM
 resolution where applicable, and optimizer. Every method start and finish is
 reported, including skipped/failed fits and early stopping. During a long fit,
 iteration updates are printed at most once every 10 seconds, at completed
@@ -23,7 +23,7 @@ Different FSM resolutions, stopping behavior, and machine load can change the
 estimate. Preparation, summarizing, and saving stages are also announced, followed
 by the total elapsed time and saved path on completion.
 
-Both blocks in `configs/studies.json` accept `progress` (default `true`) and
+All study blocks in `configs/studies.json` accept `progress` (default `true`) and
 `progress_interval_seconds` (positive, default `10`). For example:
 
 ```matlab
@@ -108,6 +108,80 @@ The existing diagnostic panels remain available for these results.
 `all_runs` stores every trial's histories, settings, initialization/data hashes,
 and outcomes. Equal seeds across MATLAB and NumPy do not produce identical
 data or initializations; pairing is guaranteed within each backend.
+
+## Noise sensitivity, paired records, fixed initialization
+
+```matlab
+noise_study('example_1');
+```
+
+```text
+python python/noise_study.py --experiment example_1
+```
+
+Both benchmarks are supported. Configure `noise_study` in `configs/studies.json`:
+
+- `sigma_nu_values`: innovation standard deviations, default `[0.05, 0.1, 0.2, 0.5, 1.0]`.
+  Values must be finite, nonnegative, unique, and increasing; zero noise is allowed.
+- `n_runs`: runs **per optimizer and noise level**, default 1. Increase this
+  for independent data realizations at each level.
+- `data_seed`: stream seeds start here and increase by one per realization.
+- `theta0`: fixed common parameter start; `null` uses the nominal unit-delay start.
+- `K_max`: optional iteration-budget override; record length comes from the benchmark.
+- `summary_population`: `finite` (default) or `converged`, as for record length below.
+- `save_case_results`: default `true`, retaining full comparison histories at each level.
+
+MATLAB accepts the shared `options.study`, `study_config`, `experiment_cfg`,
+`method_configs`, `output_file`, and `verbose` options. Python exposes
+`run_noise_study(cfg, study, ...)` and accepts the shared study CLI options plus
+`--noise-levels` to override the standard deviations.
+
+Within each backend, each realization uses the same Gaussian input and unit-variance
+innovation draws at every level. Resetting the same stream also preserves the
+pre-burn-in noise samples. Recursive IIR filtering generates truth independently
+of FSM approximation, and the standard deviation scales innovations **before**
+the AR noise filter. Thus `sigma_nu**2` is innovation power, rather than the
+variance of the colored output disturbance. The initial parameter vector, record
+length, methods, FSM resolution, and optimizer settings stay fixed across levels.
+Latent signals are initialized consistently for each observed record.
+
+The aggregate files `results/<experiment>/noise_pl.mat` and `noise_fsm.mat` use
+the same schema in both backends:
+
+- `study.final_param_estimates`: level by method by realization by parameter.
+- `study.statuses`, `dataset_ids`, `resolved_configs`: level by method by realization.
+- `study.bias`, `variance`, `rmse`, `mcse`, `ci_low`, `ci_high`, `count`:
+  level by method by parameter.
+- `study.finite_count`, `selected_count`, `converged_count`, `failed_count`,
+  `skipped_count`: level by method.
+- `study.sigma_nu_values`, `innovation_variances`, `data_seeds`, `theta0`,
+  `theta_true`, `method_names`, `record_length`, `case_files`, and `config_json`:
+  sweep coordinates and reproducibility information.
+
+MATLAB may omit trailing singleton dimensions; SciPy's `simplify_cells=True`
+also squeezes singleton axes. Failed/skipped estimates remain NaN and their
+statuses remain visible. Bias intervals describe Monte Carlo uncertainty of the
+mean parameter error, conditional on the selected population. Matched levels are
+correlated; no independent-level significance test is claimed.
+
+By default, `noise_<pl|fsm>_sigma01.mat` through `_sigma05.mat` retain full
+comparison payloads, including every trial's histories, data IDs, initialization,
+diagnostics, and per-run noise-level metadata. Indices follow `sigma_nu_values`;
+the second default file uses 0.1. Custom output filenames supply the corresponding
+prefix. Set `save_case_results` false for aggregate-only runs.
+
+Plot individual levels using the existing plotter with explicit files:
+
+```matlab
+files = {fullfile('results','example_1','noise_pl_sigma02.mat'), ...
+         fullfile('results','example_1','noise_fsm_sigma02.mat')};
+plot_comparison_results(struct('data_files',{files}, ...
+    'fig_dir',fullfile('figs','local','noise_sigma02')));
+```
+
+The aggregate sweep is not a comparison payload; use the per-level files with
+the comparison plotter. Matching seed numbers across MATLAB and Python do not
+produce identical records.
 
 ## Record length, independent data, fixed initialization
 
@@ -211,6 +285,7 @@ python -B -m unittest discover -s python -p "test_*.py" -v
 ```matlab
 addpath('mlab');
 test_identification_studies;
+test_noise_study;
 % Optional: exercise MATLAB plots on freshly generated FSM study files:
 test_identification_studies('path/to/initialization_fsm.mat','path/to/record_length_fsm.mat');
 ```

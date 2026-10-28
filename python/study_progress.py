@@ -71,6 +71,9 @@ class StudyProgress:
         metadata = event["run_metadata"]
         if "initialization" in self.label:
             context = f"initialization {metadata.get('initialization_index', metadata.get('mc_index', 1))}/{self.n_runs}"
+        elif "sigma_nu" in metadata:
+            context = (f"sigma_nu={metadata['sigma_nu']:g}; N={event['record_length']}; "
+                       f"realization {metadata.get('mc_index', 1)}/{self.n_runs}")
         else:
             context = f"{metadata.get('resolution', 'recursive_PL')}; N={event['record_length']}; realization {metadata.get('mc_index', 1)}/{self.n_runs}"
         print(f"[{self.label}] {self.completed}/{self.total} fits completed ({100*self.completed/self.total:.1f}%) | "

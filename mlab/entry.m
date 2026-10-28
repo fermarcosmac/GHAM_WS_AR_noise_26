@@ -6,7 +6,7 @@
 
 repo_root = pwd; % call from repo root!
 addpath([repo_root '\mlab']);
-experiment_name = 'example_1'; % 'example_1' or 'example_CSTR'
+experiment_name = 'example_CSTR'; % 'example_1' or 'example_CSTR'
 base_cfg = jsondecode(fileread(fullfile(repo_root,'configs',[experiment_name '.json'])));
 results_dir = fullfile(repo_root,'results',experiment_name);
 fig_dir = fullfile(repo_root,'figs');
@@ -71,6 +71,27 @@ payload = record_length_study(experiment_name,options);
 %     'output_file',fullfile(local_results_dir,'record_length_pl_short.mat'));
 % payload = record_length_study(experiment_name,options);
 
+%% PL noise sensitivity: five innovation standard deviations, fixed start
+% Uses noise_study in configs/studies.json: [0.05 0.1 0.2 0.5 1.0].
+% noise_study.n_runs = 1: one run per optimizer and noise level by default.
+% Each of n_runs independent records is paired across all levels and methods.
+% Saves noise_pl.mat plus noise_pl_sigma01.mat ... noise_pl_sigma05.mat.
+payload = noise_study(experiment_name);
+
+%% PL noise sensitivity: small local experiment
+% cfg = base_cfg;
+% cfg.settings.lambda_g = 256;
+% options = struct('experiment_cfg',cfg, ...
+%     'study',struct('n_runs',1,'K_max',10), ...
+%     'output_file',fullfile(local_results_dir,'noise_pl_short.mat'));
+% payload = noise_study(experiment_name,options);
+
+%% Plot one noise level using the existing comparison plotter (PL or FSM)
+% data_files = {fullfile(results_dir,'noise_pl_sigma02.mat'), ...
+%               fullfile(results_dir,'noise_fsm_sigma02.mat')}; % sigma_nu = 0.1
+% plot_comparison_results(struct('data_files',{data_files}, ...
+%     'fig_dir',local_fig_dir,'export_figures',export_figures));
+
 %% Plot saved Monte Carlo comparisons AND available initialization studies
 % Loads PL and FSM results for the selected benchmark. No identification runs.
 % datasets = plot_comparison_results(struct('experiment_name',experiment_name, ...
@@ -132,20 +153,6 @@ plot_comparison_results(struct('study','record_length', ...
 % [figures,report] = plot_optimization_diagnostics(saved,local_fig_dir, ...
 %     [experiment_name '_montecarlo_pl'],export_figures);
 
-%% PL noise-intensity sweep with matched seeds and local outputs
-% cfg = base_cfg;
-% cfg.mode = 'MONTECARLO';
-% cfg.N_MC = 5;
-% cfg.settings.lambda_g = 256;
-% cfg.settings.K_max = 20;
-% noise_levels = [0.01 0.05 0.10 0.20]; % Innovation standard deviations.
-% for k = 1:numel(noise_levels)
-%     cfg.settings.sigma_nu = noise_levels(k);
-%     comparison(cfg,struct('experiment_name',experiment_name, ...
-%         'make_local_plots',false,'verbose',false, ...
-%         'output_file',fullfile(local_results_dir,sprintf('noise_pl_%02d.mat',k))));
-% end
-
 %% PL Newton Hessian-damping ablation with matched seeds and local outputs
 % cfg = base_cfg;
 % cfg.mode = 'MONTECARLO';
@@ -167,6 +174,7 @@ plot_comparison_results(struct('study','record_length', ...
 %% Short regression checks (temporary data; not manuscript-scale studies)
 % test_comparison_diagnostics;
 % test_identification_studies;
+% test_noise_study;
 % Optional checks on actual Python study files:
 % test_identification_studies(fullfile(results_dir,'initialization_fsm.mat'), ...
 %     fullfile(results_dir,'record_length_fsm.mat'));
@@ -183,6 +191,8 @@ plot_comparison_results(struct('study','record_length', ...
 %     fullfile(repo_root,'python','comparison_torch.py')));
 % status = system(sprintf('"%s" "%s" --experiment "%s"',python_executable, ...
 %     fullfile(repo_root,'python','initialization_study.py'),experiment_name));
+% status = system(sprintf('"%s" "%s" --experiment "%s"',python_executable, ...
+%     fullfile(repo_root,'python','noise_study.py'),experiment_name));
 % status = system(sprintf('"%s" "%s" --experiment "%s"',python_executable, ...
 %     fullfile(repo_root,'python','record_length_study.py'),experiment_name));
 % Full CLI/API options are documented in README.md.

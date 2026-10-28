@@ -42,6 +42,87 @@ switch kind
             end
         end
         payload.results = payload.all_runs{1};
+    case 'noise'
+        levels = study.sigma_nu_values(:).';
+        assert(isvector(study.sigma_nu_values) && ~isempty(levels) && ...
+            all(isfinite(levels)) && all(levels>=0) && all(diff(levels)>0), ...
+            'sigma_nu_values must be nonempty, finite, nonnegative, unique, and increasing.');
+        theta0 = parameter_vector(study.theta0,n,center);
+        assert(is_stable(theta0,sys,1),'theta0 denominators must be stable.');
+        assert(ismember(study.summary_population,{'finite','converged'}), ...
+            'summary_population must be finite or converged.');
+        cfg.initialization = struct('policy','consistent','theta0',theta0);
+        cfg.mode = 'MONTECARLO';
+        cfg.seed = field_or(study,'data_seed',field_or(cfg,'seed',42));
+        study.type = 'noise'; study.varied_variable = 'innovation_standard_deviation';
+        study.data_seed = cfg.seed; study.theta0 = theta0;
+        methods = cellstr(string(cfg.selected_methods)); methods = methods(:).';
+        M = numel(methods); L = numel(levels); length = cfg.settings.lambda_g;
+        progress = study_progress('PL noise',methods,R,repmat(length,1,L),1,study);
+        estimates = NaN(L,M,R,n); statuses = cell(L,M,R);
+        resolved_configs = cell(L,M,R); dataset_ids = cell(L,M,R);
+        case_files = repmat({''},1,L); statistics = struct();
+        for j = 1:L
+            cfg.settings.sigma_nu = levels(j);
+            progress.stage(sprintf('Noise level %d/%d: sigma_nu=%g',j,L,levels(j)));
+            data_runs = cell(R,1);
+            for r = 1:R
+                % Reset the stream at every level, including pre-burn-in noise.
+                % All methods share the input and scaled innovations for this trial.
+                data_runs{r} = reference_data(cfg,length,cfg.seed+r-1);
+            end
+            run_options = base_options;
+            run_options.data_runs = data_runs; run_options.save_results = false;
+            if progress.enabled
+                run_options.progress_callback = @(event) noise_progress(progress,event,levels(j));
+            end
+            run = comparison(cfg,run_options);
+            for r = 1:R
+                for m = 1:M
+                    run.all_runs{r}(m).run_metadata.study_type = 'noise';
+                    run.all_runs{r}(m).run_metadata.noise_level_index = j;
+                    run.all_runs{r}(m).run_metadata.sigma_nu = levels(j);
+                    resolved_configs{j,m,r} = run.all_runs{r}(m).resolved_config_json;
+                    dataset_ids{j,m,r} = run.all_runs{r}(m).run_metadata.dataset_id;
+                end
+            end
+            run.results = run.all_runs{1};
+            values = double(run.mc_summary.final_param_estimates);
+            states = run.mc_summary.statuses;
+            estimates(j,:,:,:) = reshape(values,[1 M R n]);
+            statuses(j,:,:) = reshape(states,[1 M R]);
+            stats = study_bias_statistics(values,states,sys.theta_true,study.summary_population);
+            for key = fieldnames(stats).'
+                name = key{1}; value = stats.(name);
+                if ismember(name,{'bias','variance','rmse','mcse','ci_low','ci_high','count'})
+                    statistics.(name)(j,:,:) = reshape(value,[1 M n]);
+                else
+                    statistics.(name)(j,:) = reshape(value,[1 M]);
+                end
+            end
+            if field_or(study,'save_case_results',true)
+                [~,stem] = fileparts(output);
+                case_file = fullfile(folder,sprintf('%s_sigma%02d.mat',stem,j));
+                run.study = study; run.study.type = 'noise_case';
+                run.study.sigma_nu = levels(j); run.study.noise_level_index = j;
+                save(case_file,'-struct','run','-v7');
+                case_files{j} = case_file;
+            end
+        end
+        saved = study;
+        saved.sigma_nu_values = levels; saved.innovation_variances = levels.^2;
+        saved.method_names = methods; saved.record_length = length;
+        saved.theta_true = sys.theta_true(:);
+        saved.param_labels = run.experiment.param_labels; saved.param_names = run.experiment.param_names;
+        saved.final_param_estimates = estimates; saved.statuses = statuses;
+        saved.dataset_ids = dataset_ids; saved.resolved_configs = resolved_configs;
+        saved.data_seeds = cfg.seed+(0:R-1); saved.case_files = case_files;
+        saved.data_pairing = 'matched_input_and_standard_innovations';
+        saved.initial_condition_policy = 'zero_state_fit_after_burn_in';
+        saved.config_json = jsonencode(study);
+        for key = fieldnames(statistics).', saved.(key{1}) = statistics.(key{1}); end
+        payload = struct('schema_version',2,'parametrization','PL','study',saved, ...
+            'experiment_name',experiment_name,'resolved_experiment_json',jsonencode(cfg));
     case 'record_length'
         lengths = study.record_lengths(:).';
         assert(~isempty(lengths) && all(isfinite(lengths)) && all(lengths>=1) && ...
@@ -171,6 +252,11 @@ f = theta(s.na+s.nb+1:s.na+s.nb+s.nf-1);
 for k = 1:numel(f), beta=beta+f(k)*alpha.^(k+1); end
 d = theta(s.na+s.nb+s.nf:end); c=beta+filter(1,[1;d].',nu);
 keep = burn+(1:length); data=struct('r',u(keep),'nu',nu(keep),'c',c(keep));
+end
+
+function noise_progress(progress,event,sigma)
+if ~strcmp(event.phase,'stage'), event.metadata.sigma_nu = sigma; end
+progress.callback(event);
 end
 
 function value = field_or(s,key,default)

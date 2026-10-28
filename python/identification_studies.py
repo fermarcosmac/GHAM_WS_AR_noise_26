@@ -1,4 +1,4 @@
-"""Initialization sensitivity and record-length studies using the existing FSM runners."""
+"""Initialization, noise, and record-length studies using the existing FSM runners."""
 from __future__ import annotations
 
 import argparse
@@ -188,6 +188,81 @@ def bias_statistics(estimates, statuses, theta_true, population="finite"):
             "failed_count": (~np.isin(statuses, list(FINITE_STATUSES)+["skipped"])).sum(axis=1)}
 
 
+def run_noise_study(cfg, study, *, experiment_name="example_CSTR", output_file=None,
+                    device=torch.device("cpu"), verbose=False):
+    cfg, dims, theta, methods, configs = _setup(cfg, study, device)
+    study = copy.deepcopy(study)
+    count = positive_integer(study["n_runs"], "n_runs")
+    levels = np.asarray(study["sigma_nu_values"], dtype=float)
+    if (levels.ndim != 1 or not levels.size or not np.isfinite(levels).all()
+            or np.any(levels < 0) or np.any(np.diff(levels) <= 0)):
+        raise ValueError("sigma_nu_values must be nonempty, finite, nonnegative, unique, and increasing")
+    start = parameter_vector(study.get("theta0"), dims, "theta0", nominal_theta(dims))
+    if not stable(start, dims):
+        raise ValueError("theta0 denominators must be stable")
+    population = study.get("summary_population", "finite")
+    if population not in {"finite", "converged"}:
+        raise ValueError("summary_population must be finite or converged")
+    seed = int(study.get("data_seed", cfg.get("seed", 42)))
+    length = positive_integer(cfg["settings"]["lambda_g"], "lambda_g")
+    cfg.update(mode="MONTECARLO", seed=seed, N_MC=count, make_local_plots=False)
+    cfg["initialization"] = {"policy": "consistent", "theta0": start.tolist()}
+    study.update(type="noise", varied_variable="innovation_standard_deviation",
+                 data_seed=seed, theta0=start.tolist(), sigma_nu_values=levels.tolist(),
+                 summary_population=population)
+    path = Path(output_file or ROOT/"results"/experiment_name/"noise_fsm.mat")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shape = (len(levels), len(methods), count)
+    estimates = np.full(shape+(dims.n_params,), np.nan)
+    statuses = np.full(shape, "not_run", dtype=object)
+    resolved_configs = np.full(shape, "", dtype=object)
+    dataset_ids = np.full(shape, "", dtype=object)
+    case_files = np.full(len(levels), "", dtype=object)
+    summaries = []
+    progress = StudyProgress("FSM noise", methods, count, [length]*len(levels), 1, study)
+    for j, sigma in enumerate(levels):
+        cfg["settings"]["sigma_nu"] = float(sigma)
+        progress.stage(f"Noise level {j+1}/{len(levels)}: sigma_nu={sigma:g}")
+        runs = []
+        first_data = None
+        for r in range(count):
+            # Reset the same stream at each level: only innovation amplitude changes,
+            # including the pre-burn-in samples used by the recursive noise filter.
+            data = reference_data(cfg, dims, theta, length, seed+r, device)
+            if first_data is None:
+                first_data = data
+            runs.append(_run(cfg, methods, configs, dims, theta, data,
+                {"study_type": "noise", "noise_level_index": j+1, "sigma_nu": float(sigma),
+                 "mc_index": r+1, "data_seed": seed+r}, verbose, progress))
+        arrays = terminal_arrays(runs, methods, dims.n_params)
+        estimates[j], statuses[j], resolved_configs[j], dataset_ids[j] = arrays
+        summaries.append(bias_statistics(arrays[0], arrays[1], theta.cpu().numpy(), population))
+        if study.get("save_case_results", True):
+            case_file = path.parent/(path.stem+f"_sigma{j+1:02d}.mat")
+            case_study = {**study, "type": "noise_case", "sigma_nu": float(sigma), "noise_level_index": j+1}
+            _save_case(case_file, cfg, case_study, methods, dims, theta, first_data,
+                       runs, experiment_name, "MONTECARLO")
+            case_files[j] = str(case_file.resolve())
+    statistics = {key: np.asarray([cell[key] for cell in summaries]) for key in summaries[0]}
+    saved = {"type": "noise", "varied_variable": "innovation_standard_deviation",
+             "sigma_nu_values": levels, "innovation_variances": levels**2,
+             "method_names": np.asarray(methods, dtype=object), "n_runs": count,
+             "record_length": length, "theta_true": theta.cpu().numpy(), "theta0": start,
+             "param_labels": np.asarray(build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd), dtype=object),
+             "param_names": np.asarray(build_param_names(dims.na, dims.nb, dims.nf, dims.nd), dtype=object),
+             "final_param_estimates": estimates, "statuses": statuses, "dataset_ids": dataset_ids,
+             "resolved_configs": resolved_configs, "summary_population": population,
+             "data_seeds": seed+np.arange(count), "case_files": case_files,
+             "data_pairing": "matched_input_and_standard_innovations",
+             "config_json": config_json(study), "initial_condition_policy": "zero_state_fit_after_burn_in",
+             **statistics}
+    progress.stage("Saving noise study results")
+    savemat(path, {"schema_version": 2, "parametrization": "FSM", "study": saved,
+                   "experiment_name": experiment_name, "resolved_experiment_json": config_json(cfg)}, long_field_names=True)
+    progress.finish(path)
+    return path
+
+
 def run_record_length_study(cfg, study, *, experiment_name="example_CSTR", output_file=None,
                            device=torch.device("cpu"), verbose=False):
     cfg, dims, theta, methods, configs = _setup(cfg, study, device)
@@ -282,6 +357,8 @@ def main(kind):
     parser.add_argument("--runs", type=int)
     parser.add_argument("--iterations", type=int)
     parser.add_argument("--lengths", nargs="+", type=int)
+    parser.add_argument("--noise-levels", nargs="+", type=float,
+                        help="Innovation standard deviations (noise study only)")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--verbose", action="store_true")
@@ -298,6 +375,11 @@ def main(kind):
         if kind != "record_length":
             parser.error("--lengths is only available for the record-length study")
         study["record_lengths"] = args.lengths
-    runner = run_initialization_study if kind == "initialization" else run_record_length_study
+    if args.noise_levels is not None:
+        if kind != "noise":
+            parser.error("--noise-levels is only available for the noise study")
+        study["sigma_nu_values"] = args.noise_levels
+    runner = {"initialization": run_initialization_study, "noise": run_noise_study,
+              "record_length": run_record_length_study}[kind]
     runner(load_experiment_config(args.experiment), study, experiment_name=args.experiment,
            output_file=args.output, device=torch.device("cpu") if args.cpu else default_device(), verbose=args.verbose)

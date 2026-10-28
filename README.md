@@ -2,7 +2,7 @@
 
 MATLAB implements the PL parametrization; Python/PyTorch implements the FSM
 parametrization. The repository includes individual examples, optimizer
-comparisons, initialization-sensitivity experiments, record-length studies, and
+comparisons, initialization-sensitivity experiments, noise-sensitivity studies, record-length studies, and
 MATLAB plots for results from both backends.
 
 Run the commands below **from the repository root**. Full experiments can be
@@ -16,6 +16,7 @@ in memory and write to ignored `results/local/` and `figs/local/` directories.
 - [Choose an entry point](#choose-an-entry-point)
 - [Single examples and comparisons](#single-examples-and-comparisons)
 - [Initialization sensitivity](#initialization-sensitivity)
+- [Noise sensitivity](#noise-sensitivity)
 - [Record length and finite-sample bias](#record-length-and-finite-sample-bias)
 - [Configuration reference](#configuration-reference)
 - [Method availability and controls](#method-availability-and-controls)
@@ -65,13 +66,14 @@ run that section, then uncomment and run the block you need.
 | Interactive standalone demo | [example.m](mlab/example.m) | [example_torch.py](python/example_torch.py) |
 | One record or Monte Carlo method comparison | [comparison.m](mlab/comparison.m) | [comparison_torch.py](python/comparison_torch.py) |
 | Fixed data, randomized parameter starts | [initialization_study.m](mlab/initialization_study.m) | [initialization_study.py](python/initialization_study.py) |
+| Innovation standard deviation, paired records | [noise_study.m](mlab/noise_study.m) | [noise_study.py](python/noise_study.py) |
 | Independent records at several lengths | [record_length_study.m](mlab/record_length_study.m) | [record_length_study.py](python/record_length_study.py) |
 | Compare methods, estimates, and conditioning | [plot_comparison_results.m](mlab/plot_comparison_results.m) | Load the Python MAT files in the MATLAB plotter. |
 | Plot bias, RMSE, and outcome tables | [plot_record_length_study.m](mlab/plot_record_length_study.m) | Load the Python MAT files in the MATLAB plotter. |
 
 The standalone demos and ordinary Python comparison script have **no command-line
 argument parser**. Select their experiment in the source, or use the APIs below.
-The two Python study scripts have command-line options and `--help`.
+The three Python study scripts have command-line options and `--help`.
 
 ## Single examples and comparisons
 
@@ -238,6 +240,49 @@ The fixed polynomial coefficient `f1 = 1` is not randomized. Plot **final parame
 estimates** across starts, with true-value reference lines, using the commands in
 [Plotting and exports](#plotting-and-exports).
 
+## Noise sensitivity
+
+The `noise_study` block in [configs/studies.json](configs/studies.json) tests
+innovation standard deviations **[0.05, 0.1, 0.2, 0.5, 1.0]**, with the nominal
+0.1 second. Innovation power is the square of each value. Each optimizer runs
+once per level by default (`n_runs: 1`), using a fixed common `theta0` (`null` uses
+the nominal `b1 = 1` start), and the benchmark's record length and optimizer
+settings. An optional `K_max` overrides the iteration budget.
+
+```matlab
+addpath('mlab');
+noise_study('example_1');
+% Short local experiment:
+cfg = jsondecode(fileread('configs/example_1.json'));
+cfg.settings.lambda_g = 256;
+noise_study('example_1',struct('experiment_cfg',cfg, ...
+    'study',struct('n_runs',1,'K_max',10), ...
+    'output_file',fullfile(pwd,'results','local','noise_pl.mat')));
+```
+
+```text
+python python/noise_study.py --experiment example_1
+python python/noise_study.py --experiment example_1 --runs 1 --iterations 10 --cpu --output results/local/noise_fsm.mat
+python python/noise_study.py --help
+```
+
+The input and standard-normal innovation draws (including burn-in) are matched
+across noise levels using `data_seed + realization - 1`. Only innovation amplitude
+changes; all methods share each resulting record and initialization. Pairing is
+within a backend; MATLAB and NumPy streams differ.
+
+Outputs are `results/<experiment>/noise_pl.mat` and `noise_fsm.mat`, containing
+final estimates, statuses, signed bias, variance, parameter RMSE, Monte Carlo
+standard errors, outcome counts, seeds, and resolved settings. By default,
+`save_case_results: true` also saves full histories in `noise_<pl|fsm>_sigma01.mat`
+through `_sigma05.mat`; the second case has `sigma_nu = 0.1`. These per-level files
+work with `plot_comparison_results` through explicit `data_files`. The aggregate
+is for analysis of the sweep; see [array dimensions](docs/identification_studies.md#noise-sensitivity-paired-records-fixed-initialization).
+
+Override `sigma_nu_values`, `theta0`, `n_runs`, `data_seed`, `summary_population`,
+and `save_case_results` in the study block or MATLAB `options.study`. Python also
+accepts `--noise-levels 0.05 0.1 0.2 0.5 1.0`.
+
 ## Record length and finite-sample bias
 
 Use this after choosing a start and iteration budget from the initialization
@@ -285,15 +330,16 @@ for interpretation and array dimensions.
 
 ### Shared study interfaces
 
-Both Python study CLIs accept `--experiment`, `--study-config`, `--runs`,
+All Python study CLIs accept `--experiment`, `--study-config`, `--runs`,
 `--iterations`, `--output`, `--cpu`, and `--verbose`; only record length accepts
-`--lengths`. A custom study JSON keeps the same two top-level study blocks.
+`--lengths`, and only noise accepts `--noise-levels`. A custom study JSON must
+contain the corresponding `<kind>_study` block.
 CLI overrides take precedence over the study file.
 
 Study progress is **on by default**, without `--verbose`: method start/finish
 messages and periodic iteration updates include the current repetition/case,
 completed-fit count, elapsed time, and approximate ETA. Configure `progress`
-(default `true`) and `progress_interval_seconds` (default `10`) in either study
+(default `true`) and `progress_interval_seconds` (default `10`) in any study
 block. MATLAB can override these via `options.study`; Python also accepts
 `--no-progress`. ETA warms up after the first fit of every method and estimates
 remaining optimization time from method-specific runtimes and record lengths.
@@ -304,8 +350,9 @@ MATLAB wrappers accept `options.study` (study overrides), `study_config` (JSON
 path), `experiment_cfg` (full benchmark struct), `method_configs` (methods struct),
 `output_file`, and `verbose`. Python's
 [identification_studies.py](python/identification_studies.py) exposes
-`run_initialization_study(cfg, study, ...)` and `run_record_length_study(cfg, study, ...)`
-for programmatic runs. Both accept `experiment_name`, `output_file`, `device`, and
+`run_initialization_study(cfg, study, ...)`, `run_noise_study(cfg, study, ...)`, and
+`run_record_length_study(cfg, study, ...)` for programmatic runs. All accept
+`experiment_name`, `output_file`, `device`, and
 `verbose` keyword arguments. Study wrappers manage initialization themselves and
 disable padded histories.
 
@@ -446,7 +493,7 @@ settings and data hashes are saved by the comparison runners.
 | Study | What to change | Recommended entry point |
 | --- | --- | --- |
 | Initialization distribution / spread | `center`, `distribution`, `scale`, sampling radius | Initialization-study wrapper. |
-| Noise intensity | `settings.sigma_nu` | Comparison API or study `experiment_cfg` / Python `cfg`; repeat for each standard deviation. |
+| Noise intensity | `noise_study.sigma_nu_values` | Noise-study wrapper, with paired input/innovation draws and a fixed start. |
 | Record length | `record_lengths` | Record-length wrapper, which pairs nested data prefixes. |
 | FSM accuracy | `fsm_resolutions` or per-method FIR/grid fields | Record-length study for bias; comparison API for optimization behavior. |
 | Step size / damping | Method-specific active fields in the table above | MATLAB `options.method_configs`; Python `run_method_set` with copied configs. |
@@ -627,6 +674,7 @@ python -B -m unittest discover -s python -p "test_*.py" -v
 addpath('mlab');
 test_comparison_diagnostics;
 test_identification_studies;
+test_noise_study;
 % Optional cross-backend import/plot checks on freshly generated Python files:
 test_comparison_diagnostics('path/to/fsm_result.mat');
 test_identification_studies('path/to/initialization_fsm.mat', ...

@@ -1,6 +1,7 @@
 """Checks experimental isolation, dependent-data pairing, and signed bias statistics."""
 import copy
 import io
+import json
 from contextlib import redirect_stdout
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ from common import load_json_config
 from comparison_torch import build_dims_and_theta, load_experiment_config
 from study_progress import StudyProgress
 from identification_studies import (bias_statistics, reference_data, run_initialization_study,
-                                    run_record_length_study, sample_initializations, stable)
+                                    run_noise_study, run_record_length_study, sample_initializations, stable)
 
 
 class IdentificationStudyTests(unittest.TestCase):
@@ -143,6 +144,78 @@ class IdentificationStudyTests(unittest.TestCase):
         settings['record_lengths'] = [4, 8]
         with self.assertRaises(ValueError):
             run_record_length_study(cfg, settings)
+
+    def test_noise_study_pairs_records_scales_innovations_and_fixes_initialization(self):
+        settings = copy.deepcopy(self.settings['noise_study'])
+        settings.update(n_runs=2)
+        levels = settings['sigma_nu_values']
+        self.assertEqual(len(levels), 5)
+        self.assertEqual(levels[1], .1)
+        cfg = copy.deepcopy(self.cfg)
+        cfg['selected_methods'] = ['RGLS', 'WS-GGI']
+        original_cfg, original_settings = copy.deepcopy(cfg), copy.deepcopy(settings)
+        get = lambda obj, key: obj[key] if isinstance(obj, dict) else getattr(obj, key)
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory:
+            output = Path(directory)/'noise.mat'
+            with redirect_stdout(io.StringIO()) as console:
+                run_noise_study(cfg, settings, output_file=output)
+            self.assertEqual(settings, original_settings)
+            saved = loadmat(output, simplify_cells=True)['study']
+            self.assertIn('40/40 fits completed (100.0%)', console.getvalue())
+            self.assertIn('sigma_nu=0.1; N=32; realization 2/2', console.getvalue())
+            self.assertEqual(saved['final_param_estimates'].shape, (5, 4, 2, 6))
+            self.assertEqual(saved['bias'].shape, (5, 4, 6))
+            np.testing.assert_allclose(saved['innovation_variances'], np.square(levels))
+            np.testing.assert_array_equal(saved['theta0'], [0, 0, 1, 0, 0, 0])
+            cfg_zero = copy.deepcopy(cfg)
+            cfg_zero['settings']['sigma_nu'] = 0
+            noiseless = reference_data(cfg_zero, self.dims, self.theta, 32, settings['data_seed'], torch.device('cpu'))
+            baseline_nu, baseline_output_noise = None, None
+            for j, sigma in enumerate(levels):
+                case = loadmat(saved['case_files'][j], simplify_cells=True)
+                self.assertEqual(case['experiment']['sigma_nu'], sigma)
+                self.assertEqual(json.loads(case['resolved_experiment_json'])['settings']['sigma_nu'], sigma)
+                np.testing.assert_array_equal(case['example_data']['r'], noiseless['r'].numpy())
+                unit_nu = case['example_data']['nu']/sigma
+                unit_output_noise = (case['example_data']['c']-noiseless['c'].numpy())/sigma
+                if baseline_nu is None:
+                    baseline_nu, baseline_output_noise = unit_nu, unit_output_noise
+                np.testing.assert_allclose(unit_nu, baseline_nu, rtol=1e-14, atol=1e-14)
+                np.testing.assert_allclose(unit_output_noise, baseline_output_noise, rtol=1e-12, atol=1e-12)
+                for r, run in enumerate(case['all_runs']):
+                    for m, result in enumerate(run):
+                        np.testing.assert_array_equal(get(result, 'theta0'), saved['theta0'])
+                        metadata = get(result, 'run_metadata')
+                        self.assertEqual(get(metadata, 'sigma_nu'), sigma)
+                        self.assertEqual(get(metadata, 'data_seed'), settings['data_seed']+r)
+                        self.assertEqual(get(metadata, 'dataset_id'), saved['dataset_ids'][j, m, r])
+                self.assertEqual(len(set(saved['dataset_ids'][j, :, 0])), 1)
+                self.assertNotEqual(saved['dataset_ids'][j, 0, 0], saved['dataset_ids'][j, 0, 1])
+            self.assertEqual(len(set(saved['dataset_ids'][:, 0, 0])), 5)
+            self.assertTrue(np.isnan(saved['final_param_estimates'][:, 0]).all())  # RGLS placeholder
+            settings.update(save_case_results=False, progress=False, sigma_nu_values=np.asarray(levels))
+            with redirect_stdout(io.StringIO()):
+                run_noise_study(cfg, settings, output_file=Path(directory)/'repeat.mat')
+            repeat = loadmat(Path(directory)/'repeat.mat', simplify_cells=True)['study']
+            np.testing.assert_array_equal(saved['final_param_estimates'], repeat['final_param_estimates'])
+            self.assertFalse(list(Path(directory).glob('repeat_sigma*.mat')))
+        self.assertEqual(cfg, original_cfg)
+        self.assertEqual(original_settings['sigma_nu_values'], self.settings['noise_study']['sigma_nu_values'])
+
+    def test_noise_study_rejects_invalid_levels_and_supports_zero_noise(self):
+        settings = copy.deepcopy(self.settings['noise_study'])
+        settings.update(n_runs=1, progress=False, save_case_results=False)
+        for levels in ([], [-.1, .1], [.1, .1], [.2, .1], [float('nan')], [float('inf')], [[.1, .2]]):
+            with self.subTest(levels=levels), self.assertRaisesRegex(ValueError, 'sigma_nu_values'):
+                run_noise_study(self.cfg, {**settings, 'sigma_nu_values': levels})
+        cfg = copy.deepcopy(self.cfg)
+        cfg['selected_methods'] = ['WS-GGI']
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory:
+            output = Path(directory)/'zero.mat'
+            run_noise_study(cfg, {**settings, 'sigma_nu_values': [0.]}, output_file=output)
+            saved = loadmat(output, simplify_cells=True)['study']
+            self.assertEqual(saved['sigma_nu_values'], 0.)
+            self.assertEqual(saved['innovation_variances'], 0.)
 
 
 if __name__ == '__main__':

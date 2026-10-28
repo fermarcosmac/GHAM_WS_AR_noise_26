@@ -48,6 +48,9 @@ stage(sprintf('Starting %d repetitions, %d method fits; ETA warms up after the f
         end
         if contains(label,'initialization')
             context = sprintf('initialization %d/%d',event.metadata.mc_index,n_runs);
+        elseif isfield(event.metadata,'sigma_nu')
+            context = sprintf('sigma_nu=%g; N=%d; realization %d/%d', ...
+                event.metadata.sigma_nu,event.record_length,event.metadata.mc_index,n_runs);
         else
             context = sprintf('recursive_PL; N=%d; realization %d/%d', ...
                 event.record_length,event.metadata.mc_index,n_runs);
