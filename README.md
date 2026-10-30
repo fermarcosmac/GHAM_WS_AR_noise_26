@@ -1,7 +1,8 @@
 # Wiener-system identification with AR output noise
 
 MATLAB implements the PL parametrization; Python/PyTorch implements the FSM
-parametrization. The repository includes individual examples, optimizer
+optimization methods and the exact-IIR Bayesian baseline `BI_HMC`.
+The repository includes individual examples, optimizer
 comparisons, initialization-sensitivity experiments, noise-sensitivity studies, record-length studies, and
 MATLAB plots for results from both backends.
 
@@ -15,6 +16,7 @@ in memory and write to ignored `results/local/` and `figs/local/` directories.
 - [Installation and layout](#installation-and-layout)
 - [Choose an entry point](#choose-an-entry-point)
 - [Single examples and comparisons](#single-examples-and-comparisons)
+- [Bayesian inference with BI_HMC](#bayesian-inference-with-bi_hmc)
 - [Initialization sensitivity](#initialization-sensitivity)
 - [Noise sensitivity](#noise-sensitivity)
 - [Record length and finite-sample bias](#record-length-and-finite-sample-bias)
@@ -53,6 +55,7 @@ at the end check the installed environment on short experiments.
 | [figs/](figs/) | Exported figures and source diagrams. |
 | [docs/comparison_diagnostics.md](docs/comparison_diagnostics.md) | Initialization, stopping, diagnostic definitions, and result schema. |
 | [docs/identification_studies.md](docs/identification_studies.md) | Study design, statistical interpretation, and saved array dimensions. |
+| [docs/bayesian_hmc_implementation.md](docs/bayesian_hmc_implementation.md) | BI_HMC model, sampler controls, posterior diagnostics, and result schema. |
 | [docs/manuscript/](docs/manuscript/) | Manuscript sources and section previews. |
 
 ## Choose an entry point
@@ -71,9 +74,9 @@ run that section, then uncomment and run the block you need.
 | Compare methods, estimates, and conditioning | [plot_comparison_results.m](mlab/plot_comparison_results.m) | Load the Python MAT files in the MATLAB plotter. |
 | Plot bias, RMSE, and outcome tables | [plot_record_length_study.m](mlab/plot_record_length_study.m) | Load the Python MAT files in the MATLAB plotter. |
 
-The standalone demos and ordinary Python comparison script have **no command-line
-argument parser**. Select their experiment in the source, or use the APIs below.
-The three Python study scripts have command-line options and `--help`.
+The Python example and the three Python study scripts expose command-line options
+and `--help`. The ordinary Python comparison script still uses its source-level
+benchmark selection; its programmatic API supports exact method subsets.
 
 ## Single examples and comparisons
 
@@ -88,12 +91,15 @@ python python/example_torch.py
 ```
 
 The MATLAB demo currently selects `example_1`; Python selects `example_CSTR`.
-Change `experiment_name` inside the relevant script to switch benchmark.
-These demos display figures and retain their original initialization and
-relative-step stopping behavior; they do not save the comparison MAT schema.
+Change `experiment_name` inside the MATLAB script or pass Python's
+`--experiment example_1` to switch benchmark. With no arguments, the existing
+optimization demos retain their original initialization, plots, and relative-step
+stopping behavior. They do not save the comparison MAT schema.
 MATLAB's demo explicitly implements WS-GGI, even if its configured method label
 is changed. Python selects `python_example_method`, then `example_method`, then
-its built-in WS-GGHAM-1-dH default. Experiment-level initialization, stopping, and
+its built-in WS-GGHAM-1-dH default; `--method` overrides that selection.
+The `BI_HMC` example uses the saved comparison schema described below.
+Experiment-level initialization, stopping, and
 diagnostic overrides described below belong to the comparison/study runners.
 For a saved, consistently initialized single example, use `mode = EXAMPLE` in a
 comparison instead.
@@ -152,7 +158,9 @@ The script's `main()` currently selects `example_CSTR`. Edit that source-level
 selection to use `example_1`; edit the benchmark JSON for ordinary comparison
 settings. `python_selected_methods`, if provided, takes precedence over
 `selected_methods`. The ordinary Python runner and study runners also append
-WS-GGHAM-2-I and WS-GGHAM-2-H. To run an **exact subset**, call `run_method_set`
+WS-GGHAM-2-I and WS-GGHAM-2-H unless `include_python_extra_methods` is `false`.
+`BI_HMC` is selected explicitly and is never appended automatically.
+To run an **exact subset**, call `run_method_set`
 directly, as in this complete short example from a Python session at the repo root:
 
 ```python
@@ -199,6 +207,84 @@ save_comparison_results(
                   for key in ("r", "nu", "c")},
 )
 ```
+
+## Bayesian inference with BI_HMC
+
+`BI_HMC` estimates the original `a`, `b`, `f`, and `d` coefficients and the
+innovation variance in a separate Hamiltonian Monte Carlo loop. It uses the exact
+causal IIR signal model, physical Gaussian coefficient priors restricted to stable
+denominators, an inverse-gamma variance prior, and the change-of-variables
+Jacobians. The final estimate is the **mean of the retained physical-parameter
+draws**. This estimate supplies the final errors, output reconstruction, boxplots,
+and hypothesis-test inputs shared with the other methods.
+
+The following is a **plumbing smoke run**, not a sufficient posterior sample:
+
+```text
+python python/example_torch.py --experiment example_1 --method BI_HMC --cpu --length 256 --chains 2 --warmup 20 --samples 20 --leapfrog-steps 4 --no-show --output results/local/bi_hmc_smoke.mat --figure-dir figs/local/bi_hmc_smoke
+```
+
+It writes the MAT result, a `.summary.json` report, posterior figures, and final
+output/error figures. Small smoke budgets are expected to produce
+`sampling_warning`; they establish that the workflow runs, not that inference
+has converged. Use the multi-chain diagnostic checks before reporting estimates.
+
+Sampler controls live in `python/optim_configs.json` under `methods.BI_HMC`:
+`chains`, `warmup`, `samples`, `leapfrog_steps`, `step_size`, adaptation settings,
+initialization, priors, `seed`, and diagnostic thresholds. `K_max` and optimizer
+stopping tolerances do not set the HMC budget. The example CLI can override
+`--chains`, `--warmup`, `--samples`, `--leapfrog-steps`, and `--sampler-seed`, or
+load a JSON object with `--hmc-config path/to/overrides.json`. `--data-seed` controls
+data generation independently. See [the implementation guide](docs/bayesian_hmc_implementation.md)
+for the complete controls and diagnostics.
+
+To include HMC in a configured comparison, add `BI_HMC` to
+`python_selected_methods` and set `include_python_extra_methods: false` for an
+exact selection. The study CLIs also accept an exact method list:
+
+```text
+python python/initialization_study.py --experiment example_1 --methods WS-GGI BI_HMC --runs 3 --cpu --output results/local/initialization_bi.mat
+python python/noise_study.py --experiment example_1 --methods WS-GGI BI_HMC --runs 3 --noise-levels 0.05 0.1 0.2 --cpu --output results/local/noise_bi.mat
+python python/record_length_study.py --experiment example_1 --methods WS-GGI BI_HMC --runs 3 --lengths 256 512 1024 --cpu --output results/local/record_length_bi.mat
+```
+
+These study commands use the configured record length and full HMC settings;
+review both budgets before launching. A Python study block can instead specify
+`"methods": ["WS-GGI", "BI_HMC"]`. Sampler seeds derive from the HMC seed and
+trial index, independently of data and initialization-draw seeds; paired
+noise/length cases reuse the sampler stream for a given realization.
+
+Study-local HMC controls can be supplied in a `bayesian_hmc` object inside that
+study block, or with `--hmc-config` pointing to a flat JSON object. For example,
+save this **smoke-only** override as `results/local/hmc_smoke.json`:
+
+```json
+{"chains": 2, "warmup": 10, "samples": 20, "leapfrog_steps": 3, "initial_optimization_steps": 3}
+```
+
+```text
+python python/record_length_study.py --experiment example_1 --methods BI_HMC --runs 1 --lengths 32 64 --hmc-config results/local/hmc_smoke.json --cpu --output results/local/record_length_bi_smoke.mat
+```
+
+The override is merged in memory and does not change the production method JSON.
+This budget exercises study plumbing and is insufficient for posterior inference.
+
+Compare **total wall-clock time**, including HMC initialization, warm-up,
+sampling, diagnostics, and final scoring. HMC draws are not optimization
+iterations: its optimizer histories are empty and posterior plots replace
+trajectory plots. `sampling_complete` means the configured diagnostics passed;
+`sampling_warning` retains a finite point estimate with unresolved diagnostics.
+The default finite cohort includes valid estimates from either status, while
+the diagnostics-passing/converged cohort excludes warnings.
+
+Python studies preserve observed input prehistory and the discarded noise
+sample count, so HMC fits the retained record with the correct zero-start signal
+history and finite-burn-in noise covariance. It never receives the true internal
+state or true innovation history. Full posterior draws are in comparison case
+files; noise/record-length aggregates retain final estimates, diagnostics and
+total runtimes. Enable `save_case_results` to retain those full posterior files.
+The [study guide](docs/identification_studies.md#including-bi_hmc-in-python-studies)
+describes the arrays and the different boundary policies of existing optimizers.
 
 ## Initialization sensitivity
 
@@ -343,7 +429,7 @@ for interpretation and array dimensions.
 
 ### Shared study interfaces
 
-All Python study CLIs accept `--experiment`, `--study-config`, `--runs`,
+All Python study CLIs accept `--experiment`, `--study-config`, `--methods`, `--hmc-config`, `--runs`,
 `--iterations`, `--output`, `--cpu`, and `--verbose`; only record length accepts
 `--lengths`, and only noise accepts `--noise-levels`. A custom study JSON must
 contain the corresponding `<kind>_study` block.
@@ -385,6 +471,7 @@ in [MATLAB optim_configs.json](mlab/optim_configs.json) and
 | `N_MC` | Number of ordinary Monte Carlo records. |
 | `selected_methods` | Ordered method names; see Python's extra-method behavior above. |
 | `python_selected_methods` | Optional Python-specific selection. |
+| `include_python_extra_methods` | Default true for legacy comparisons; false keeps the exact Python selection. Study `methods` / `--methods` set this false. |
 | `make_local_plots` | Ordinary comparison runner's immediate figures. |
 | `matlab_optim_config`, `python_optim_config` | Backend optimizer JSON paths, resolved relative to `mlab/` or `python/`. |
 | `system.na`, `nb`, `nf`, `nd` | Linear denominator/numerator orders, polynomial degree, and noise AR order. |
@@ -458,6 +545,7 @@ as `skipped`, rather than silently substituted.
 | WS-GGHAM-2-I | Implemented | Implemented | `eta`; FSM also `d_step_multiplier`; no Hessian inverse to regularize. |
 | WS-LGHAM-1-TIK | Implemented | Implemented | `eta`, `inverse_solver`, `tikhonov_lambda`, `eps_0` (fallback `epsilon0`); FSM also `d_step_multiplier`. |
 | WS-LGHAM-3-TIK | Implemented | Implemented | Same loss-root controls. |
+| BI_HMC | Not implemented | Separate exact-IIR Bayesian sampler | `chains`, `warmup`, `samples`, `leapfrog_steps`, priors, adaptation, sampler seed, diagnostic thresholds. |
 
 PL WS-GGI normalizes its step using the regressor norm; FSM WS-GGI uses an
 unnormalized nonlinear gradient. Loss and regularization scales also differ
@@ -472,9 +560,11 @@ to zero. Method order therefore matters. MATLAB additionally dispatches
 WS-LGHAM-2 / WS-LGHAM-2-TIK with an appropriate method config and supports
 `order` 1–3. Python's implemented loss-root names select orders 1 and 3.
 
-Python applies configured `stability_projection` to implemented methods, with
+Python applies configured `stability_projection` to the optimization methods, with
 `stability_radius` controlling the pole radius. PL currently applies projection
 in RGLS. This differs from rejecting unstable random initializations.
+BI_HMC uses smooth reflection-coefficient coordinates and the exact Jacobian;
+it does not project posterior draws into a stable region.
 
 ### FSM approximation and reconstruction
 
@@ -588,6 +678,9 @@ condition number, signed curvature, gradient norm, and applied-step norm.
 Monte Carlo diagnostic curves use finite medians and interquartile bands.
 Singular conditions remain in the saved diagnostics/CSV even when omitted from
 logarithmic curves. Old MAT files without diagnostics remain readable.
+BI_HMC has posterior histograms and final output/error comparisons; it is excluded
+from optimizer trajectories and Hessian-conditioning panels while participating
+in final-estimate/error, hypothesis-test, and total-runtime summaries.
 
 The lower-level helpers are also callable:
 

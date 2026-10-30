@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import hashlib
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,136 @@ from wiener_system import (
 )
 
 PYTHON_EXTRA_METHODS = ["WS-GGHAM-2-I", "WS-GGHAM-2-H"]
+FINITE_RESULT_STATUSES = {"ok", "converged", "max_iterations", "stalled", "sampling_complete", "sampling_warning"}
+
+
+def inference_data_context(data: dict, burn_in: int = 0) -> dict:
+    """Observed prehistory and noise-start policy; never expose true innovations."""
+    history = data.get("input_prehistory")
+    if history is None and "r_full" in data:
+        history = data["r_full"][:burn_in]
+    context = {"noise_burn_in": int(data.get("noise_burn_in", burn_in))}
+    if history is not None:
+        context["input_prehistory"] = history
+    return context
+
+
+def _sampling_seed(method_cfg: dict, metadata: dict) -> int:
+    """Independent of truth/noise amplitude and stable across method ordering."""
+    base = int(method_cfg.get("seed", 20261030))
+    # Pair the sampler RNG across noise/resolution conditions of a data replicate.
+    replicate = int(metadata.get("initialization_index", metadata.get("mc_index", 1))) - 1
+    return (base + 104729 * replicate) % (2**31 - 1)
+
+
+def _numpy(value) -> np.ndarray:
+    return value.detach().cpu().numpy() if isinstance(value, torch.Tensor) else np.asarray(value)
+
+
+def run_bayesian_identification(
+    method_cfg: dict, r: torch.Tensor, nu: torch.Tensor, c: torch.Tensor,
+    theta_true: torch.Tensor, dims: WienerDimensions, *, run_metadata: dict | None = None,
+    data_context: dict | None = None, verbose: bool = True, progress_callback=None,
+) -> dict[str, Any]:
+    """Run HMC separately, then score only its physical posterior-mean estimate.
+
+    Truth and the simulated innovations enter assessment below, never run_bi_hmc.
+    Empty optimizer histories intentionally prevent interpreting draws as updates.
+    """
+    from bayesian_hmc import run_bi_hmc, resolve_hmc_config
+
+    started = time.perf_counter()
+    cfg = resolve_hmc_config(resolve_method_config(method_cfg))
+    metadata, context = dict(run_metadata or {}), dict(data_context or {})
+    sampler_seed = _sampling_seed(cfg, metadata)
+    init_cfg = cfg.get("initialization", {})
+    initial = init_cfg.get("theta0")
+    if initial is None:
+        initial = np.zeros(dims.n_params)
+        if dims.nb:
+            initial[dims.na] = 1.
+    initial = np.asarray(initial, dtype=float).reshape(-1)
+    if initial.size != dims.n_params or not np.isfinite(initial).all():
+        raise ValueError("BI_HMC initialization.theta0 must contain one finite value per physical coefficient")
+
+    def report(event):
+        event = {**event, "method": "BI_HMC", "method_kind": "bayesian",
+                 "record_length": len(r), "run_metadata": metadata}
+        if progress_callback is not None:
+            progress_callback(event)
+        elif verbose and event.get("phase") == "sampling":
+            completed = event.get("transition", 0)
+            print(f"BI_HMC: chain {event.get('chain', '?')}; {event.get('sampling_phase', 'sampling')}; "
+                  f"{completed}/{event.get('max_transitions', '?')} transitions; "
+                  f"{event.get('elapsed_seconds', 0.):.1f}s elapsed", flush=True)
+
+    if verbose:
+        print("BI_HMC: separate HMC loop; final estimator = physical posterior mean", flush=True)
+    sample = run_bi_hmc(r, c, dims, cfg, initial_theta=initial,
+        input_history=context.get("input_prehistory", context.get("input_history")),
+        noise_burn_in=context.get("noise_burn_in"), seed=sampler_seed, progress_callback=report)
+    theta_hat = _numpy(sample["theta_hat"]).astype(float).reshape(-1)
+    valid = bool(sample.get("point_estimate_valid", np.isfinite(theta_hat).all()))
+    truth = theta_true.detach().cpu().numpy().reshape(-1)
+    norm_truth = np.linalg.norm(truth)
+    final_error = float(100. * np.linalg.norm(theta_hat-truth)/norm_truth) if valid and norm_truth > 0 else np.nan
+    output = np.full(len(r), np.nan)
+    if valid:
+        with torch.no_grad():
+            estimate = torch.as_tensor(theta_hat, dtype=r.dtype, device=r.device)
+            output = simulate_wiener(r, nu, estimate, dims).detach().cpu().numpy()
+    observed = c.detach().cpu().numpy()
+    output_error = observed-output
+    final_rmse = float(np.sqrt(np.mean(output_error**2))) if np.isfinite(output_error).all() else np.nan
+    samples = _numpy(sample.get("posterior_samples", [])).astype(float)
+    variance_samples = _numpy(sample.get("variance_samples", [])).astype(float)
+    metadata.update({"data_sha256": array_digest(r, c), "dataset_id": array_digest(r, c),
+        "initialization_sha256": array_digest(initial), "backend": "python", "dtype": "torch.float64",
+        "device": "cpu", "torch_version": str(torch.__version__), "python_version": sys.version.split()[0],
+        "sampler_seed": sampler_seed, "point_estimate": "posterior_mean",
+        "forward_model": "exact_iir", "noise_burn_in": sample.get("noise_burn_in", -1),
+        "noise_initialization": sample.get("noise_initialization", "stationary"),
+        "signal_initialization": sample.get("signal_initialization", "zero_at_record_start"),
+        "input_history_length": sample.get("input_history_length", 0),
+        "input_history_sha256": array_digest(context.get("input_prehistory", context.get("input_history", [])))})
+    resolved_cfg = sample.get("resolved_config", cfg)
+    resolved_json = config_json(resolved_cfg)
+    metadata["config_sha256"] = hashlib.sha256(resolved_json.encode("utf-8")).hexdigest()
+    metadata["run_id"] = ":".join((metadata["dataset_id"], "BI_HMC", metadata["initialization_sha256"],
+                                   metadata["config_sha256"], str(sampler_seed)))
+    if r.is_cuda:
+        torch.cuda.synchronize(r.device)
+    total_wall = time.perf_counter()-started
+    result = {"name": "BI_HMC", "method_kind": "bayesian", "is_bayesian": True,
+        "point_estimate": "posterior_mean", "status": sample["status"],
+        "status_msg": sample.get("status_msg", sample.get("message", "; ".join(sample.get("sampler_diagnostics", {}).get("warnings", [])) or "Sampling diagnostics passed.")),
+        "theta_hat": theta_hat, "theta0": initial.copy(), "theta_hist": np.empty((dims.n_params, 0)),
+        **{key: np.array([], dtype=float) for key in ("param_err", "rmse_hist", "est_loss_hist", "rel_change", "iter_time", "cum_time")},
+        "active_mask": np.array([], dtype=bool), "final_err": final_error,
+        "total_time": total_wall, "total_wall_time": total_wall,
+        "inference_wall_time": float(sample.get("total_time", total_wall)),
+        "diagnostic_time": 0., "iterations": 0, "update_count": 0, "accepted_updates": 0,
+        "stopping_iteration": -1, "sampling_transitions": int(sample.get("sampling_transitions", 0)),
+        "posterior_samples": samples, "posterior_variance_samples": variance_samples,
+        "posterior_log_density": _numpy(sample.get("posterior_log_density", [])),
+        "posterior_draw_count": int(samples.shape[0]*samples.shape[1]) if samples.ndim == 3 else 0,
+        "sampler_seed": sampler_seed, "sampler_diagnostics": sample.get("sampler_diagnostics", {}),
+        "diagnostics_passed": bool(sample.get("diagnostics_passed", False)), "point_estimate_valid": valid,
+        "final_output_rmse": final_rmse, "output_estimate": output, "output_error": output_error,
+        "noise_free_output_estimate": _numpy(sample.get("final_beta", [])),
+        "final_innovation_variance": float(variance_samples.mean()) if variance_samples.size else np.nan,
+        "run_metadata": metadata, "resolved_config_json": resolved_json,
+        "objective_definition": "gaussian_innovation_likelihood_exact_iir",
+        "rmse_definition": "true_innovation_reconstruction", "diagnostics": pack_diagnostics([]),
+        "diagnostic_summary": {}, "derivative_snapshots": []}
+    if samples.ndim == 3 and samples.size:
+        flat = samples.reshape(-1, dims.n_params)
+        result["posterior_std"] = flat.std(axis=0, ddof=1)
+        result["posterior_interval"] = np.quantile(flat, [.025, .975], axis=0)
+    if verbose:
+        print(f"BI_HMC: {result['status']}; {result['posterior_draw_count']} retained draws; "
+              f"final parameter error {final_error:.5g}%; total wall time {total_wall:.3f}s", flush=True)
+    return result
 
 
 def save_comparison_results(
@@ -77,11 +208,15 @@ def save_comparison_results(
     param_names = build_param_names(dims.na, dims.nb, dims.nf, dims.nd)
     param_labels = build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd)
     def mat_struct(items):
-        fields = list(items[0]) if items else []
+        # Bayesian and optimization results share final scores but have different
+        # supplementary fields. Preserve the union, regardless of method order.
+        fields = list(dict.fromkeys(field for item in items for field in item))
         output = np.empty((1, len(items)), dtype=[(field, "O") for field in fields])
         for idx, result in enumerate(items):
             for field in fields:
-                value = result[field]
+                value = result.get(field, np.empty((0, 0)))
+                if value is None:
+                    value = np.empty((0, 0))
                 if field == "derivative_snapshots":
                     value = np.asarray(value, dtype=object)
                 output[field][0, idx] = value
@@ -135,8 +270,14 @@ def run_identification_method(
     lambda_g: int, K_max: int, conv_threshold: float, *,
     enforce_fixed_iterations: bool = False, verbose: bool = True,
     run_metadata: dict | None = None,
+    data_context: dict | None = None,
     progress_callback=None,
 ) -> dict[str, Any]:
+    if method_name.upper() == "BI_HMC":
+        return run_bayesian_identification(method_cfg, r, nu, c, theta_true, dims,
+            run_metadata=run_metadata, data_context=data_context, verbose=verbose,
+            progress_callback=progress_callback)
+    start_time = now()
     if K_max < 1 or conv_threshold < 0:
         raise ValueError("K_max must be positive and conv_threshold nonnegative")
     method_cfg = resolve_method_config(method_cfg)
@@ -174,7 +315,6 @@ def run_identification_method(
     updates = accepted = 0
     stopping_iteration = -1
     diagnostic_time = 0.
-    start_time = now()
 
     def record(theta, elapsed=0., change=0., active=True):
         theta_history.append(theta.detach().cpu().numpy().copy())
@@ -251,6 +391,8 @@ def run_identification_method(
                                    "run_metadata": run_metadata or {}})
             if small_step:
                 break
+    if r.is_cuda:
+        torch.cuda.synchronize(r.device)
     wall_time = now()-start_time
     # Retain the last finite state on failure; never report its error as a successful final score.
     valid = status in {"converged", "max_iterations", "stalled"}
@@ -263,6 +405,7 @@ def run_identification_method(
                 history[key].append(value)
     packed = pack_diagnostics(rows)
     result = {"name": method_name, "status": status, "status_msg": message,
+              "method_kind": "optimization", "is_bayesian": False, "point_estimate": "terminal_iterate",
               "theta_hat": theta_hat.detach().cpu().numpy(), "theta0": theta0,
               "theta_hist": np.asarray(theta_history).T,
               **{key: np.asarray(value) for key, value in history.items()},
@@ -274,6 +417,9 @@ def run_identification_method(
               "objective_definition": "mean_squared_innovation", "rmse_definition": "true_innovation_reconstruction",
               "diagnostics": packed, "diagnostic_summary": summarize_diagnostics(packed),
               "derivative_snapshots": snapshots}
+    result["point_estimate_valid"] = valid
+    result["diagnostics_passed"] = status == "converged"
+    result["final_output_rmse"] = history["rmse_hist"][actual_samples-1] if valid else float("nan")
     if verbose:
         print(f"{method_name}: {status}; {accepted} accepted updates. {message}")
     return result
@@ -304,7 +450,7 @@ def build_dims_and_theta(cfg: dict[str, Any], *, dtype: torch.dtype, device: tor
 
 def select_python_methods(exp_cfg: dict[str, Any]) -> list[str]:
     selected_methods = list(exp_cfg.get("python_selected_methods", exp_cfg["selected_methods"]))
-    for method_name in PYTHON_EXTRA_METHODS:
+    for method_name in PYTHON_EXTRA_METHODS if exp_cfg.get("include_python_extra_methods", True) else []:
         if method_name not in selected_methods:
             selected_methods.append(method_name)
     return selected_methods
@@ -335,16 +481,24 @@ def run_method_set(
     verbose: bool,
     experiment_cfg: dict | None = None,
     run_metadata: dict | None = None,
+    data_context: dict | None = None,
     progress_callback=None,
 ) -> list[dict[str, Any]]:
     results = []
     best_error_so_far = float("inf")
     for method_name in selected_methods:
+        method_cfg = resolve_method_config(method_configs.get(make_valid_method_key(method_name), {}), experiment_cfg)
+        is_bayesian = method_name.upper() == "BI_HMC"
+        if is_bayesian:
+            from bayesian_hmc import resolve_hmc_config
+            method_cfg = resolve_hmc_config(method_cfg)
         progress_event = {"method": method_name, "record_length": lambda_g,
-                          "max_updates": K_max-1, "run_metadata": run_metadata or {}}
+                          "max_updates": K_max-1, "run_metadata": run_metadata or {},
+                          "method_kind": "bayesian" if is_bayesian else "optimization"}
+        if is_bayesian:
+            progress_event["max_transitions"] = int(method_cfg.get("chains", 4))*(int(method_cfg.get("warmup", 500))+int(method_cfg.get("samples", 1000)))
         if progress_callback is not None:
             progress_callback({**progress_event, "phase": "method_start"})
-        method_cfg = resolve_method_config(method_configs.get(make_valid_method_key(method_name), {}), experiment_cfg)
         if "LGHAM" in method_name.upper() and np.isfinite(best_error_so_far):
             method_cfg["best_error_so_far"] = best_error_so_far
         if verbose:
@@ -365,11 +519,13 @@ def run_method_set(
             enforce_fixed_iterations=enforce_fixed_iterations,
             verbose=verbose,
             run_metadata=run_metadata,
+            data_context=data_context,
             progress_callback=progress_callback,
         )
         if progress_callback is not None:
             progress_callback({**progress_event, "phase": "method_end",
-                               "iteration": method_result["accepted_updates"], "status": method_result["status"]})
+                               "iteration": method_result.get("sampling_transitions", method_result["accepted_updates"]),
+                               "status": method_result["status"]})
         results.append(method_result)
         loss_curve = method_result.get("est_loss_hist", np.array([]))
         if "LGHAM" not in method_name.upper() and method_result["status"] in {"converged", "max_iterations", "stalled"} and loss_curve.size:
@@ -390,6 +546,10 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
     final_param_estimates = np.full((n_methods, n_mc, n_params), np.nan)
     final_errors = np.full((n_methods, n_mc), np.nan)
     total_time_runs = np.full((n_methods, n_mc), np.nan)
+    total_wall_time_runs = np.full((n_methods, n_mc), np.nan)
+    final_output_rmse_runs = np.full((n_methods, n_mc), np.nan)
+    diagnostics_passed = np.zeros((n_methods, n_mc), dtype=bool)
+    point_estimate_valid = np.zeros((n_methods, n_mc), dtype=bool)
     statuses = np.full((n_methods, n_mc), "missing", dtype=object)
     run_ids = np.full((n_methods, n_mc), "", dtype=object)
 
@@ -404,7 +564,12 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
                 rmse_runs[method_idx, run_idx, :] = pad_vector(result["rmse_hist"], K_max)
             final_errors[method_idx, run_idx] = result["final_err"]
             total_time_runs[method_idx, run_idx] = result["total_time"]
-            if result["status"] in {"converged", "max_iterations", "stalled"} and result["theta_hat"].size:
+            total_wall_time_runs[method_idx, run_idx] = result.get("total_wall_time", result["total_time"])
+            final_output_rmse_runs[method_idx, run_idx] = result.get("final_output_rmse", np.nan)
+            diagnostics_passed[method_idx, run_idx] = result.get("diagnostics_passed", result["status"] == "converged")
+            valid = result["status"] in FINITE_RESULT_STATUSES and result.get("point_estimate_valid", True)
+            point_estimate_valid[method_idx, run_idx] = valid
+            if valid and result["theta_hat"].size:
                 theta_hat = np.asarray(result["theta_hat"], dtype=float).reshape(-1)
                 final_param_estimates[method_idx, run_idx, :] = theta_hat
                 final_param_errors[method_idx, run_idx, :] = theta_hat - theta_true_np
@@ -438,6 +603,10 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
         "final_param_estimates": final_param_estimates,
         "final_errors": final_errors,
         "total_time_runs": total_time_runs,
+        "total_wall_time_runs": total_wall_time_runs,
+        "final_output_rmse_runs": final_output_rmse_runs,
+        "diagnostics_passed": diagnostics_passed,
+        "point_estimate_valid": point_estimate_valid,
     }
 
 
@@ -483,6 +652,7 @@ def main() -> None:
         enforce_fixed_iterations,
         verbose=True,
         experiment_cfg=exp_cfg, run_metadata={"data_seed": seed, "mc_index": 1, "experiment_name": experiment_name},
+        data_context=inference_data_context(data, burn_in),
     )
 
     mc_summary = None
@@ -509,6 +679,7 @@ def main() -> None:
                     enforce_fixed_iterations,
                     verbose=False,
                     experiment_cfg=exp_cfg, run_metadata={"data_seed": run_seed, "mc_index": mc_idx+1, "experiment_name": experiment_name},
+                    data_context=inference_data_context(data_i, burn_in),
                 )
             )
         mc_summary = summarize_montecarlo(mc_runs, selected_methods, theta_true, K_max)
@@ -516,13 +687,13 @@ def main() -> None:
     print("\n" + "=" * 92)
     print("FINAL METHOD SUMMARY")
     print("=" * 92)
-    print(f"{'Method':<14} {'Status':<12} {'Final err(%)':<12} {'Final d1':<12} {'CPU time (s)':<12}")
+    print(f"{'Method':<14} {'Status':<18} {'Final err(%)':<12} {'Final d1':<12} {'Wall time (s)':<12}")
     print("-" * 92)
     for result in results:
         final_d = float("nan")
         if result["theta_hat"].size:
             final_d = result["theta_hat"][-1]
-        print(f"{result['name']:<14} {result['status']:<12} {result['final_err']:<12.5f} {final_d:<12.5f} {result['total_time']:<12.5f}")
+        print(f"{result['name']:<14} {result['status']:<18} {result['final_err']:<12.5f} {final_d:<12.5f} {result['total_wall_time']:<12.5f}")
 
     save_comparison_results(
         results_file,
@@ -544,6 +715,8 @@ def main() -> None:
             "r": r.detach().cpu().numpy().reshape(-1, 1),
             "nu": nu.detach().cpu().numpy().reshape(-1, 1),
             "c": c.detach().cpu().numpy().reshape(-1, 1),
+            "input_prehistory": data["r_full"][:burn_in].detach().cpu().numpy(),
+            "noise_burn_in": burn_in,
         },
         mc_summary=mc_summary, all_runs=mc_runs, resolved_experiment=exp_cfg,
     )
@@ -551,6 +724,14 @@ def main() -> None:
     if make_local_plots:
         plot_method_metrics(results)
         plot_parameter_trajectories(results, theta_true.detach().cpu().numpy(), build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd))
+        bayesian = [item for item in results if item.get("method_kind") == "bayesian"]
+        if bayesian:
+            from bayesian_plots import plot_bayesian_posteriors, plot_bayesian_outputs, plot_final_error_runtime
+            for item in bayesian:
+                plot_bayesian_posteriors(item, theta_true.detach().cpu().numpy(),
+                                        build_plot_labels(dims.na, dims.nb, dims.nf, dims.nd))
+                plot_bayesian_outputs(item, c.detach().cpu().numpy())
+            plot_final_error_runtime(results)
 
         import matplotlib.pyplot as plt
 

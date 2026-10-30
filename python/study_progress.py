@@ -25,6 +25,8 @@ class StudyProgress:
         self.completed = 0
         self.started = self.last_report = clock()
         self.active_method = None
+        self.active_kind = "optimization"
+        self.active_budget = 0
         self.method_started = self.started
         self.stage(f"Starting {n_runs} repetitions, {self.total} method fits; ETA warms up after the first fit of each method.")
 
@@ -50,14 +52,32 @@ class StudyProgress:
             return
         now = self.clock()
         phase, method = event["phase"], event["method"]
+        default_kind = "optimization" if phase == "method_start" else self.active_kind
+        bayesian = (event.get("method_kind", default_kind) == "bayesian"
+                    or method == "BI_HMC")
         if phase == "method_start":
             self.active_method, self.active_length = method, event["record_length"]
+            self.active_kind = "bayesian" if bayesian else "optimization"
+            self.active_budget = (event.get("max_transitions", 0) if bayesian
+                                  else event.get("max_updates", 0))
             self.method_started = now
-            detail = f"starting; update budget {event['max_updates']}"
-        elif phase == "iteration":
+            if bayesian:
+                detail = (f"starting; HMC transition budget {self.active_budget}" if self.active_budget
+                          else "starting; HMC warm-up and sampling")
+            else:
+                detail = f"starting; update budget {event['max_updates']}"
+        elif phase in {"iteration", "sampling", "warmup"}:
             if now-self.last_report < self.interval:
                 return
-            detail = f"updates {event['iteration']}/{event['max_updates']}"
+            if bayesian:
+                transition = event.get("transition", event.get("iteration", 0))
+                budget = event.get("max_transitions", self.active_budget)
+                sampler_phase = event.get("sampling_phase", phase)
+                chain = f"; chain {event['chain']}" if "chain" in event else ""
+                count = f"{transition}/{budget}" if budget else str(transition)
+                detail = f"{sampler_phase}{chain}; HMC transitions {count}"
+            else:
+                detail = f"updates {event['iteration']}/{event['max_updates']}"
         elif phase == "method_end":
             elapsed = now-self.method_started
             self.seconds[method] += elapsed
@@ -65,7 +85,9 @@ class StudyProgress:
             self.remaining[method] -= event["record_length"]
             self.completed += 1
             self.active_method = None
-            detail = f"{event['status']}; {event['iteration']} accepted updates; fit time {duration(elapsed)}"
+            work = (f"{event.get('transition', event.get('iteration', 0))} HMC transitions" if bayesian
+                    else f"{event['iteration']} accepted updates")
+            detail = f"{event['status']}; {work}; fit time {duration(elapsed)}"
         else:
             raise ValueError(f"Unknown progress event: {phase}")
         metadata = event["run_metadata"]

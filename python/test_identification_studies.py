@@ -25,6 +25,8 @@ class IdentificationStudyTests(unittest.TestCase):
         cls.cfg['settings'].update(lambda_g=32, burn_in=4, K_max=3, conv_threshold=0)
         cls.cfg['diagnostics'] = {'enabled': False, 'save_matrices': False}
         cls.settings = load_json_config(Path(__file__).resolve().parents[1]/'configs'/'studies.json')
+        # This regression fixture must not change when the user's study grid does.
+        cls.settings['noise_study']['sigma_nu_values'] = [.05, .1, .2, .3, .5]
         cls.dims, cls.theta = build_dims_and_theta(cls.cfg, dtype=torch.float64, device=torch.device('cpu'))
 
     def test_progress_throttles_heartbeats_and_weights_eta_by_method_and_length(self):

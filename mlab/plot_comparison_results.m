@@ -131,6 +131,12 @@ for i = 1:numel(datasets)
             plot_parameter_error_normality(datasets(i),fig_dir,prefix,export_figures,method_names,colors,normality_options);
     end
     if statistics_only, continue; end
+    plot_bayesian_posteriors(datasets(i),struct('fig_dir',fig_dir,'prefix',prefix, ...
+        'export_figures',export_figures));
+    if any(arrayfun(@is_bayesian_result,datasets(i).results))
+        fig_final = plot_final_accuracy_runtime(datasets(i),method_names,colors);
+        export_if_requested(fig_final,fig_dir,['final_accuracy_runtime_' prefix '.pdf'],export_figures);
+    end
     if isfield(datasets(i).study,'type') && strcmp(char_value(datasets(i).study.type),'initialization')
         fig_box = plot_montecarlo_boxplots(datasets(i));
         export_if_requested(fig_box,fig_dir,['initialization_parameter_boxplots_' prefix '.pdf'],export_figures);
@@ -139,13 +145,15 @@ for i = 1:numel(datasets)
         continue;
     end
 
-    fig_metrics = plot_metric_summary(datasets(i), method_names, colors);
-    metrics_filename = sprintf('comparison_metrics_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
-    export_if_requested(fig_metrics, fig_dir, metrics_filename, export_figures);
+    if has_optimization_histories(datasets(i))
+        fig_metrics = plot_metric_summary(datasets(i), method_names, colors);
+        metrics_filename = sprintf('comparison_metrics_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
+        export_if_requested(fig_metrics, fig_dir, metrics_filename, export_figures);
 
-    fig_params = plot_parameter_trajectories_saved(datasets(i), method_names, colors);
-    filename = sprintf('parameter_trajectories_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
-    export_if_requested(fig_params, fig_dir, filename, export_figures);
+        fig_params = plot_parameter_trajectories_saved(datasets(i), method_names, colors);
+        filename = sprintf('parameter_trajectories_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
+        export_if_requested(fig_params, fig_dir, filename, export_figures);
+    end
 
     [fig_output, fig_error] = plot_output_signals(datasets(i), method_names, colors, 300);
     output_filename = sprintf('output_signals_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
@@ -154,9 +162,11 @@ for i = 1:numel(datasets)
     export_if_requested(fig_error, fig_dir, error_filename, export_figures);
 
     if isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
-        fig_mc = plot_montecarlo_summary(datasets(i), method_names, colors);
-        mc_filename = sprintf('montecarlo_summary_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
-        export_if_requested(fig_mc, fig_dir, mc_filename, export_figures);
+        if has_optimization_histories(datasets(i))
+            fig_mc = plot_montecarlo_summary(datasets(i), method_names, colors);
+            mc_filename = sprintf('montecarlo_summary_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
+            export_if_requested(fig_mc, fig_dir, mc_filename, export_figures);
+        end
 
         fig_box = plot_montecarlo_boxplots(datasets(i));
         box_filename = sprintf('montecarlo_parameter_boxplots_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
@@ -243,7 +253,7 @@ if size(y_mean_all, 1) ~= numel(mc_methods)
 end
 
 for m = 1:numel(mc_methods)
-    if ~is_plottable_method(dataset, mc_methods{m})
+    if ~is_plottable_method(dataset, mc_methods{m}) || is_bayesian_method(dataset,mc_methods{m})
         continue;
     end
     color_idx = find(strcmp(method_names, mc_methods{m}), 1, 'first');
@@ -389,16 +399,19 @@ end
 function fig = plot_initialization_outcomes(dataset)
 states = string(dataset.mc_summary.statuses);
 names = cellstr_value(dataset.mc_summary.method_names);
-labels = {'converged','stalled','max_iterations','failed / invalid','skipped'};
+labels = {'optimizer converged','stalled','max iterations','sampler passed', ...
+    'sampler warning','failed / invalid','skipped'};
 counts = [sum(states=="converged",2),sum(states=="stalled",2),sum(states=="max_iterations",2), ...
-    sum(~ismember(states,["converged","stalled","max_iterations","ok","skipped"]),2),sum(states=="skipped",2)];
+    sum(states=="sampling_complete",2),sum(states=="sampling_warning",2), ...
+    sum(~ismember(states,["converged","stalled","max_iterations","ok", ...
+    "sampling_complete","sampling_warning","skipped"]),2),sum(states=="skipped",2)];
 fig = figure('Color','w','Name',[dataset.parametrization ' initialization outcomes'], ...
     'Units','centimeters','Position',[3 3 26 14]);
 ax = axes(fig); bar(ax,counts,'stacked');
 xticks(ax,1:numel(names));
 xticklabels(ax,cellfun(@method_figure_label,names,'UniformOutput',false)); xtickangle(ax,35);
 ax.TickLabelInterpreter = 'none'; ylabel(ax,'Number of initializations');
-legend(ax,labels,'Interpreter','none','Location','best'); grid(ax,'on');
+legend(ax,labels,'Interpreter','none','Location','best'); grid(ax,'on'); box(ax,'on');
 title(ax,'Boxplots include finite outcomes; failed and skipped runs have no estimate','Interpreter','none');
 end
 
@@ -470,20 +483,20 @@ function print_example_result_table(dataset)
     fprintf('\n%s\n', repmat('=', 1, 108));
     fprintf('FINAL METHOD SUMMARY (%s parametrization)\n', dataset.parametrization);
     fprintf('%s\n', repmat('=', 1, 108));
-    fprintf('%-18s %-12s %-14s %-14s %-12s %-12s\n', ...
-        'Method', 'Status', 'Param err(%)', 'Output RMSE', 'Final d1', 'CPU time (s)');
+    fprintf('%-20s %-20s %-14s %-14s %-12s %-14s\n', ...
+        'Method', 'Status', 'Param err(%)', 'Output RMSE', 'Final d', 'Wall time (s)');
     fprintf('%s\n', repmat('-', 1, 108));
 
     for m = 1:numel(dataset.results)
         result = dataset.results(m);
         theta_hat = double(result.theta_hat(:));
         final_d = NaN;
-        if ~isempty(theta_hat)
+        if ~isempty(theta_hat) && dataset.experiment.dims.nd>0
             final_d = theta_hat(end);
         end
-        fprintf('%-18s %-12s %-14.5f %-14.5f %-12.5f %-12.5f\n', ...
+        fprintf('%-20s %-20s %-14.5f %-14.5f %-12.5f %-14.5f\n', ...
             display_method_label(result_name(result), dataset.parametrization), char_value(result.status), ...
-            scalar_value(result.final_err), final_output_rmse(result), final_d, scalar_value(result.total_time));
+            scalar_value(result.final_err), final_output_rmse(result), final_d, result_cpu_time(result));
     end
 end
 
@@ -493,14 +506,18 @@ method_names = cellstr_value(summary.method_names);
 n_methods = numel(method_names);
 
 param_err_runs = orient_method_run_matrix(double(summary.final_errors), n_methods);
-rmse_runs = final_values_from_mc_runs(summary.rmse_runs, n_methods);
+if isfield(summary,'final_output_rmse_runs')
+    rmse_runs = orient_method_run_matrix(summary.final_output_rmse_runs,n_methods);
+else
+    rmse_runs = final_values_from_mc_runs(summary.rmse_runs, n_methods);
+end
 [cpu_time_runs, cpu_source] = montecarlo_cpu_time_runs(summary, n_methods);
 
 fprintf('\n%s\n', repmat('=', 1, 136));
 fprintf('MONTE CARLO METHOD SUMMARY (%s parametrization)\n', dataset.parametrization);
 fprintf('%s\n', repmat('=', 1, 136));
-fprintf('%-22s %-12s %-6s %-14s %-14s %-14s %-14s %-14s %-14s\n', ...
-    'Method', 'Status', 'N valid', 'Param mean', 'Param std', 'RMSE mean', 'RMSE std', 'CPU mean (s)', 'CPU std (s)');
+fprintf('%-22s %-22s %-6s %-14s %-14s %-14s %-14s %-14s %-14s\n', ...
+    'Method', 'Status', 'N valid', 'Param mean', 'Param std', 'RMSE mean', 'RMSE std', 'Wall mean (s)', 'Wall std (s)');
 fprintf('%s\n', repmat('-', 1, 136));
 
 for m = 1:n_methods
@@ -514,15 +531,15 @@ for m = 1:n_methods
     end
 
     n_runs = min(n_param, n_rmse);
-    fprintf('%-22s %-12s %-6d %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f\n', ...
+    fprintf('%-22s %-22s %-6d %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f %-14.5f\n', ...
         display_method_label(method_names{m}, dataset.parametrization), ...
         result_status_for_method(dataset, method_names{m}), n_runs, ...
         param_mean, param_std, rmse_mean, rmse_std, cpu_mean, cpu_std);
 end
 
 if isempty(cpu_time_runs)
-    fprintf(['\nNOTE: This saved Monte Carlo summary does not contain per-run CPU timing, ', ...
-        'so CPU mean/std cannot be computed from this file.\n']);
+    fprintf(['\nNOTE: This saved Monte Carlo summary does not contain per-run total timing, ', ...
+        'so wall-time mean/std cannot be computed from this file.\n']);
 elseif ~isempty(cpu_source)
     fprintf('\nTiming statistics include all recorded attempts from mc_summary.%s; N valid counts finite performance results.\n', cpu_source);
 end
@@ -583,7 +600,7 @@ end
 
 function [cpu_time_runs, source_field] = montecarlo_cpu_time_runs(summary, n_methods)
 source_field = '';
-candidate_fields = {'total_time_runs', 'cpu_time_runs', 'cpu_times', 'total_times'};
+candidate_fields = {'total_wall_time_runs', 'total_time_runs', 'cpu_time_runs', 'cpu_times', 'total_times'};
 for i = 1:numel(candidate_fields)
     field_name = candidate_fields{i};
     if isfield(summary, field_name)
@@ -686,6 +703,98 @@ end
 methods = unique(methods, 'stable');
 end
 
+function tf = is_bayesian_method(dataset,method_name)
+tf = false;
+for j=1:numel(dataset.results)
+    if strcmp(result_name(dataset.results(j)),method_name)
+        tf=is_bayesian_result(dataset.results(j));
+        return;
+    end
+end
+% Older saved summaries may lack their representative result.
+tf=strcmpi(method_name,'BI_HMC');
+end
+
+function tf = has_optimization_histories(dataset)
+tf=false;
+runs={dataset.results};
+if isfield(dataset,'all_runs') && ~isempty(dataset.all_runs)
+    saved_runs=dataset.all_runs;
+    if ~iscell(saved_runs), saved_runs={saved_runs}; end
+    runs=[runs reshape(saved_runs,1,[])];
+end
+for k=1:numel(runs)
+    results=runs{k};
+    if iscell(results), results=[results{:}]; end
+    for j=1:numel(results)
+        result=results(j);
+        if ~is_bayesian_result(result) && is_plotted_result(result) && ...
+                isfield(result,'theta_hist') && ~isempty(result.theta_hist)
+            tf=true;
+            return;
+        end
+    end
+end
+end
+
+function fig = plot_final_accuracy_runtime(dataset,method_names,colors)
+% Compare final point estimates and complete attempts, never HMC iterations.
+fig=figure('Name',[dataset.parametrization ' final accuracy and total runtime'], ...
+    'Color','w','Units','centimeters','Position',[2 2 24 10]);
+tl=tiledlayout(fig,1,2,'TileSpacing','compact','Padding','compact');
+axes_list=[nexttile(tl),nexttile(tl)];
+for ax=axes_list, hold(ax,'on'); grid(ax,'on'); box(ax,'on'); end
+summary=dataset.mc_summary;
+if ~isempty(summary)
+    names=cellstr_value(summary.method_names); M=numel(names);
+    errors=orient_method_run_matrix(summary.final_errors,M);
+    [times,~]=montecarlo_cpu_time_runs(summary,M);
+    if isempty(times), times=NaN(size(errors)); end
+    if isfield(summary,'final_output_rmse_runs')
+        output=orient_method_run_matrix(summary.final_output_rmse_runs,M);
+    else
+        output=final_values_from_mc_runs(summary.rmse_runs,M);
+    end
+    note='Means over finite point estimates; complete per-run wall time';
+else
+    M=numel(dataset.results); names=cell(1,M);
+    errors=NaN(M,1); times=errors; output=errors;
+    for j=1:M
+        result=dataset.results(j); names{j}=result_name(result);
+        if is_ok_result(result)
+            errors(j)=scalar_value(result.final_err);
+            times(j)=result_cpu_time(result);
+            output(j)=final_output_rmse(result);
+        end
+    end
+    note='Final point estimates; complete wall time includes HMC warm-up and sampling';
+end
+for m=1:M
+    color_idx=find(strcmp(method_names,names{m}),1);
+    if isempty(color_idx), continue; end
+    values={errors(m,:),output(m,:)};
+    for panel=1:2
+        keep=isfinite(times(m,:)) & times(m,:)>0 & isfinite(values{panel});
+        if ~any(keep), continue; end
+        plot(axes_list(panel),mean(times(m,keep)),max(mean(values{panel}(keep)),realmin('double')), ...
+            'o','MarkerFaceColor',colors(color_idx,:),'Color',colors(color_idx,:), ...
+            'MarkerSize',7,'LineStyle','none','Tag','final_estimate_accuracy', ...
+            'DisplayName',latex_label(display_method_label(names{m},dataset.parametrization)));
+    end
+end
+for ax=axes_list
+    ax.XScale='log'; ax.YScale='log';
+    xlabel(ax,'Total wall-clock time (s)','Interpreter','latex');
+end
+ylabel(axes_list(1),'Final $e_\theta$ (\%)','Interpreter','latex');
+ylabel(axes_list(2),'Final output RMSE','Interpreter','latex');
+title(axes_list(1),'Parameter-estimate accuracy'); title(axes_list(2),'Output accuracy');
+lg=legend(axes_list(1),'Interpreter','latex','FontSize',8,'NumColumns',3);
+lg.Layout.Tile='south';
+title(tl,[dataset.parametrization ': final estimates and total runtime'],'Interpreter','none');
+subtitle(tl,note,'Interpreter','none','FontSize',9);
+end
+
 function fig = plot_metric_summary(dataset, method_names, colors)
 parametrization = dataset.parametrization;
 fig = figure('Name', sprintf('%s Saved Comparison Metrics', parametrization), ...
@@ -720,7 +829,7 @@ function plot_metric_axis(ax, dataset, method_names, colors, field_name, x_mode)
 hold(ax, 'on');
 for m = 1:numel(dataset.results)
     result = dataset.results(m);
-    if ~is_plotted_result(result)
+    if ~is_plotted_result(result) || is_bayesian_result(result)
         continue;
     end
 
@@ -764,7 +873,7 @@ for p = 1:n_params
     hold(ax, 'on');
     for m = 1:numel(dataset.results)
         result = dataset.results(m);
-        if ~is_plotted_result(result)
+        if ~is_plotted_result(result) || is_bayesian_result(result)
             continue;
         end
         method = result_name(result);
@@ -889,7 +998,7 @@ for idx = 1:n_estimates
     box(ax, 'on');
     xlim(ax, [1 n_samples]);
     minmax = [min(c(1:n_samples)), max(c(1:n_samples))];
-    margin = 0.1*max(abs(minmax));
+    margin = max(1e-3,0.1*max(abs(minmax)));
     ylim(ax, [minmax(1)-margin, minmax(2)+margin])
     ylabel(ax, '$c(t)$');
     title(ax, latex_label(estimate_labels{idx}), 'FontWeight', 'normal');
@@ -936,7 +1045,11 @@ axis(ax, 'off');
 end
 
 function tf = is_ok_result(result)
-tf = ismember(lower(strtrim(char_value(result.status))), {'ok','converged','stalled','max_iterations'});
+tf = ismember(lower(strtrim(char_value(result.status))), ...
+    {'ok','converged','stalled','max_iterations','sampling_complete','sampling_warning'});
+if isfield(result,'point_estimate_valid') && ~isempty(result.point_estimate_valid)
+    tf = tf && logical(result.point_estimate_valid(1));
+end
 end
 
 function tf = is_plotted_result(result)
@@ -969,7 +1082,9 @@ idx = find(keep);
 end
 
 function value = result_cpu_time(result)
-if isfield(result, 'total_time')
+if isfield(result, 'total_wall_time') && ~isempty(result.total_wall_time)
+    value = scalar_value(result.total_wall_time);
+elseif isfield(result, 'total_time')
     value = scalar_value(result.total_time);
 elseif isfield(result, 'cum_time') && ~isempty(result.cum_time)
     cum_time = double(result.cum_time(:));
@@ -995,7 +1110,10 @@ end
 
 function value = final_output_rmse(result)
 value = NaN;
-if isfield(result, 'rmse_hist')
+if isfield(result,'final_output_rmse') && ~isempty(result.final_output_rmse)
+    value = scalar_value(result.final_output_rmse);
+    return;
+elseif isfield(result, 'rmse_hist')
     values = double(result.rmse_hist(:));
 elseif isfield(result, 'RMSE_hist')
     values = double(result.RMSE_hist(:));

@@ -7,7 +7,7 @@ fig = figure('Name',sprintf('%s %s %s parameter-error wins',info.Benchmark,info.
     'Color','w','Units','centimeters','Position',[2 2 32 25]);
 ax=axes(fig,'Color',[.92 .92 .92],'XColor','k','YColor','k');
 if M<2
-    text(ax,.5,.5,'Fewer than two applicable optimizers','Units','normalized','Color','k');
+    text(ax,.5,.5,'Fewer than two applicable methods','Units','normalized','Color','k');
     axis(ax,'off');
 else
     names=info.MethodNames(active); labels=info.MethodLabels(active);

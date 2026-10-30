@@ -1,0 +1,1083 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=21mm,top=19mm,bottom=20mm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,array,xcolor,microtype,url}
+\definecolor{navy}{HTML}{17324D}
+\definecolor{link}{HTML}{166F8A}
+\definecolor{pale}{HTML}{EFF5F9}
+\definecolor{rule}{HTML}{AEC4D3}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 1pt minus 1pt}
+\setlength{\fboxsep}{8pt}
+\setlength{\emergencystretch}{2em}
+\clubpenalty=10000
+\widowpenalty=10000
+\pagestyle{plain}
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{0pt}{-2.0ex plus -.4ex minus -.2ex}{1ex plus .2ex}{\normalfont\Large\bfseries\color{navy}}}
+\renewcommand\subsection{\@startsection{subsection}{2}{0pt}{-1.5ex plus -.3ex minus -.2ex}{.7ex plus .2ex}{\normalfont\normalsize\bfseries\color{navy}}}
+\makeatother
+\newcommand{\E}{\mathbb E}
+\newcommand{\N}{\mathcal N}
+\newcommand{\IG}{\operatorname{IG}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\const}{\operatorname{const}}
+\newcommand{\data}{\mathcal D}
+\newcommand{\keybox}[1]{\par\smallskip\noindent\fcolorbox{rule}{pale}{\begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}#1\end{minipage}}\par\smallskip}
+\newcommand{\href}[2]{\leavevmode\pdfstartlink attr{/Border[0 0 0]} user{/Subtype/Link/A<</S/URI/URI(\pdfescapestring{#1})>>}\textcolor{link}{#2}\pdfendlink}
+\newcommand{\page}{\clearpage}
+\begin{document}
+
+{\small\color{link}\textbf{RESEARCH NOTE}\hfill Revised 30 October 2026}
+\vspace{3pt}
+
+{\LARGE\bfseries\color{navy} MCMC identification of a parametric Wiener-AR system\par}
+{\large Arbitrary model orders, without sparsity-promoting priors\par}
+\vspace{2pt}
+\hrule height .5pt
+
+\section{The model and the inference objective}
+
+The aim is to infer the original linear-block, polynomial and output-noise
+coefficients, together with the innovation variance. The orders
+$n_a,n_b,n_f,n_d$ are arbitrary symbols throughout: no numerical values or
+equality between them are assumed. For each identification they are specified
+and held fixed; selecting their values is a separate model-selection problem.
+We use proper Gaussian coefficient priors. This is a mathematical and
+computational design for an estimator; no MCMC identification run is reported here.
+
+With the delay operator $q^{-1}$, write
+\begin{align}
+ A(q^{-1};a)&=1+\sum_{i=1}^{n_a}a_iq^{-i}, &
+ B(q^{-1};b)&=\sum_{i=1}^{n_b}b_iq^{-i}, \notag\\
+ D(q^{-1};d)&=1+\sum_{i=1}^{n_d}d_iq^{-i}. \label{eq:polynomials}
+\end{align}
+The Wiener system and its autoregressive output noise are
+\begin{align}
+ \alpha_t&=\frac{B(q^{-1};b)}{A(q^{-1};a)}u_t,
+ &\beta_t&=\alpha_t+\sum_{j=2}^{n_f}f_j\alpha_t^j, \notag\\
+ c_t&=\beta_t+e_t,
+ &D(q^{-1};d)e_t&=\nu_t,\quad \nu_t\overset{\mathrm{iid}}{\sim}\N(0,s),
+ \qquad s=\sigma_\nu^2>0. \label{eq:model}
+\end{align}
+Inputs and innovations are assumed independent. There is no process noise inside
+the linear signal block. Consequently, $\alpha$ and $\beta$ are deterministic
+once the coefficients, input history and initial signal state have been specified.
+Only the additive output-noise path is stochastic.
+
+Keep the normalization $f_1=1$ and no constant polynomial term, as in the
+manuscript. The physical coefficient vector is
+\[
+ \theta=(a_1,\ldots,a_{n_a},b_1,\ldots,b_{n_b},
+              f_2,\ldots,f_{n_f},d_1,\ldots,d_{n_d})^\top.
+\]
+The normalization removes one scale ambiguity, assuming the true linear
+polynomial coefficient is nonzero. Suitable excitation and a nonredundant model
+are still needed; normalization alone does not prove identifiability.
+
+\subsection{Dimensions and recursions for arbitrary orders}
+There are $n_\theta=n_a+n_b+(n_f-1)+n_d$ free coefficients and one variance.
+Thus the joint sampling dimension is $n_\theta+1$, before adding unknown
+initial states. Here $n_f$ is the polynomial degree, while $n_f-1$ coefficients
+are estimated because $f_1=1$. The direct recursions are
+\begin{align}
+ \alpha_t&=-\sum_{i=1}^{n_a}a_i\alpha_{t-i}
+                 +\sum_{i=1}^{n_b}b_i u_{t-i}, \notag\\
+ e_t&=-\sum_{i=1}^{n_d}d_i e_{t-i}+\nu_t. \label{eq:recursions}
+\end{align}
+Empty sums are zero: $n_a=0$ gives an FIR signal block and $n_d=0$ gives
+white output noise. If $n_f=1$, there are no free nonlinear coefficients.
+
+\keybox{For one identification, every chain and every posterior draw uses the
+\textbf{same observed record} $\data=(u,c)$. MCMC iterations generate parameter
+draws; they do not regenerate the input or the measured output. Physical time
+$t$ and MCMC iteration $k$ are different indices.}
+
+\page
+\section{Specify initial conditions before writing the likelihood}
+
+Initial conditions are part of the statistical model. They determine the first
+samples of the predicted signal and the probability assigned to the beginning
+of the noise record. Signal and noise initial conditions require separate choices.
+
+\subsection{Initial conditions of the deterministic signal block}
+For each proposed $(a,b)$, simulate the IIR block using one of the following
+explicit models.
+\begin{enumerate}
+ \item \textbf{Known start and available input history.} Start from the known
+ state before the experiment, propagate through all available input prehistory,
+ and evaluate the likelihood only on the retained measured samples.
+ \item \textbf{Unknown state at the beginning of the retained record.} Use a
+ state-space realization of $B/A$, introduce its initial state $x_0$, and give
+ it a proper Gaussian prior, for example $x_0\sim\N(0,V_x)$. Sample it together
+ with $(\theta,s)$. The prior scale depends on the chosen state coordinates.
+\end{enumerate}
+A state-space initial state can absorb the effect of unobserved past inputs.
+If a direct difference equation is used instead, the required past outputs and
+past inputs must be supplied consistently.
+
+The existing study generator runs a burn-in period and then discards those
+samples. In general, the retained IIR trajectory begins with a nonzero state.
+Resetting that state to zero defines a different forward model. Its transient
+error may become small for long stable records, but that is an approximation,
+not an exact likelihood for the generated record.
+
+\subsection{Initial conditions of the AR output noise}
+Three common choices are legitimate, but they must not be mixed:
+\begin{itemize}
+ \item \textbf{Stationary start:} the initial noise state follows the stationary
+ distribution determined by $(d,s)$. The main worked likelihood in this note
+ uses this choice.
+ \item \textbf{Known zero or known nonzero start:} condition on the specified
+ noise state and propagate the innovations from that start.
+ \item \textbf{Conditional likelihood:} condition on an initial block of
+ observations and omit its density. This uses fewer likelihood contributions.
+\end{itemize}
+A finite burn-in from zero can approximate a stationary start. It is not
+identical to stationarity, particularly for poles close to the unit circle.
+For an exact simulation benchmark, match the likelihood to the actual generator.
+
+\subsection{General Gaussian form}
+Let $e=c-\beta(\theta)$, suppressing a known or sampled $x_0$. For a zero-mean
+noise initialization,
+\begin{equation}
+ c\mid u,\theta,s\sim\N\!\left(\beta(\theta),sK(d)\right),\qquad
+ Q=e^\top K(d)^{-1}e. \label{eq:matrixlikelihood}
+\end{equation}
+Hence
+\begin{equation}
+ \log L=-\frac N2\log(2\pi s)-\frac12\log|K(d)|-\frac{Q}{2s}.
+ \label{eq:generalloglikelihood}
+\end{equation}
+For known zero noise prehistory, $K=HH^\top$ with a unit-diagonal lower triangular
+convolution matrix $H$, so $|K|=1$; this finite-record covariance is generally
+not Toeplitz. The stationary covariance is Toeplitz and includes uncertainty
+in the initial noise state. Evaluate quadratic forms by solves, never by
+explicitly forming $K^{-1}$. For a known nonzero initial noise state, add its
+propagated mean to $\beta$ before forming the residual vector.
+
+\page
+\section{How the function $Q(\theta)$ is formed}
+\label{sec:Qconstruction}
+
+$Q$ measures the discrepancy between the observed record and a proposed
+noise-free response, with the residual correlation accounted for. It is rebuilt
+at every proposed $\theta$; it is not a fixed function of the observations alone.
+For clarity, the following formulas suppress a known or sampled signal initial
+state $x_0$. If it is unknown, write $Q(\theta,x_0)$ instead.
+$Q$ is quadratic in the residual vector for fixed $d$, but is generally not
+quadratic in the full parameter vector $\theta$.
+
+\subsection{Step 1: produce the proposed noise-free response}
+Use $(a,b)$ and the fixed input to simulate the first recursion in
+\eqref{eq:recursions}, then apply the polynomial:
+\[
+ \beta_t(\theta)=\alpha_t(a,b)+\sum_{j=2}^{n_f}f_j\alpha_t(a,b)^j.
+\]
+Changing $a$ or $b$ changes the full internal trajectory, not only one
+regression coefficient. Changing $f$ changes the static transformation of it.
+
+\subsection{Step 2: subtract it from the observations}
+Form the output residual vector
+\[
+ e_t(\theta)=c_t-\beta_t(\theta),\qquad
+ e(\theta)=(e_1(\theta),\ldots,e_N(\theta))^\top.
+\]
+The unweighted sum $\sum_t e_t^2$ ignores serial correlation. For AR output
+noise, neighboring residuals must be interpreted jointly through $d$.
+
+\subsection{Step 3: whiten the residuals using the proposed noise model}
+At times with all required lags inside the record, apply $D(q^{-1};d)$:
+\begin{equation}
+ \begin{aligned}
+ r_t(\theta)&=e_t(\theta)+\sum_{i=1}^{n_d}d_i e_{t-i}(\theta)\\
+ &=c_t-\beta_t(\theta)+\sum_{i=1}^{n_d}d_i
+                  [c_{t-i}-\beta_{t-i}(\theta)].
+ \end{aligned} \label{eq:innovationresidual}
+\end{equation}
+These are candidate innovation residuals. At the true coefficients and with
+the correct boundary treatment, they recover the driving innovations. Away
+from those coefficients they generally contain both model error and noise.
+
+\subsection{Step 4: sum squared whitened residuals, including the boundary}
+In the matrix formulation, factor $K(d)=L_dL_d^\top$ by Cholesky and solve
+$L_dw=e(\theta)$. Then
+\begin{equation}
+ \boxed{Q(\theta)=e(\theta)^\top K(d)^{-1}e(\theta)
+                     =\|L_d^{-1}e(\theta)\|_2^2=\sum_{t=1}^N w_t^2.}
+ \label{eq:Qmatrix}
+\end{equation}
+The next section gives the same quantity using only a small initial block and
+the scalar residuals $r_t$, avoiding a dense $N\times N$ factorization.
+
+\keybox{$K(d)$ is the covariance for \textbf{unit innovation variance}.
+Consequently $Q(\theta)$ does not contain $s$: the full Gaussian exponent uses
+$Q(\theta)/(2s)$. Both the residuals (through $a,b,f$) and their whitening
+(through $d$) change with $\theta$. For white noise, $K=I$ and $Q=\sum_t e_t^2$.}
+
+\page
+\section{Compute $Q$ and the likelihood for arbitrary AR order}
+\label{sec:innovlikelihood}
+
+For stationary output noise, define $\gamma_k(d)=\operatorname{Cov}(e_t,e_{t-k})/s$.
+These unit-variance autocovariances depend on $d$, not on $s$. For $n_d>0$,
+the Yule-Walker equations are
+\begin{equation}
+ \gamma_0+\sum_{i=1}^{n_d}d_i\gamma_i=1,\qquad
+ \gamma_k+\sum_{i=1}^{n_d}d_i\gamma_{|k-i|}=0,
+ \quad k=1,\ldots,n_d. \label{eq:yulewalker}
+\end{equation}
+Solve for $\gamma_0,\ldots,\gamma_{n_d}$. Let $n_0=\min(n_d,N)$ and form the
+initial-block covariance
+\begin{equation}
+ P_d=[\gamma_{|i-j|}(d)]_{i,j=1}^{n_0},\qquad
+ e_{1:n_0}\sim\N(0,sP_d). \label{eq:Pd}
+\end{equation}
+A small state-space Lyapunov equation is an equivalent way to compute these
+covariances. They must be recomputed at each proposed $d$.
+
+\subsection{Stationary initial block plus subsequent innovations}
+Factor the residual density into its initial block and any subsequent AR
+transition densities. With $P_d=L_PL_P^\top$, this yields
+\begin{equation}
+ \boxed{\begin{aligned}
+ Q(\theta)&=\underbrace{\|L_P^{-1}e_{1:n_0}(\theta)\|_2^2}_{\text{initial-block contribution}}
+             +\underbrace{\sum_{t=n_0+1}^N r_t(\theta)^2}_{\text{innovation contribution}},\\
+ \log L(\theta,s)&=-\frac N2\log(2\pi s)-\frac12\log|P_d|
+                                  -\frac{Q(\theta)}{2s}.
+ \end{aligned}} \label{eq:Qstationary}
+\end{equation}
+The first term assigns the correct probability to the beginning of the record,
+whose missing earlier noise samples are integrated out. Simply setting them
+to zero would give a different $Q$. The transformation from $e$ to
+$(e_{1:n_0},r_{n_0+1:N})$ is triangular with unit diagonal. Thus
+$|K(d)|=|P_d|$, and \eqref{eq:Qstationary} equals the matrix Gaussian likelihood.
+
+Compute the first contribution by solving $L_Pw_0=e_{1:n_0}$ and taking
+$w_0^\top w_0$. Then accumulate $r_t^2$ sequentially. Also compute
+$\log|P_d|=2\sum_i\log (L_P)_{ii}$. A fixed small AR order gives a cost
+linear in $N$, plus the small covariance calculation.
+
+\subsection{Other boundary conventions}
+With \textbf{known zero noise prehistory}, set $e_t=0$ for $t\leq0$, form
+$r_t=e_t+\sum_i d_i e_{t-i}$ for every $t=1,\ldots,N$, and use
+$Q=\sum_{t=1}^N r_t^2$. The log determinant is zero. With a \textbf{conditional}
+likelihood given the first $n_0$ outputs, omit the initial-block contribution,
+use $Q_{\mathrm{cond}}=\sum_{t=n_0+1}^N r_t^2$, and replace $N$ by $N-n_0$
+in the Gaussian normalization. Neither choice is the full stationary likelihood.
+
+For $n_d=0$, the initial block is empty, its contribution and log determinant
+are zero, and $r_t=e_t$. If $N\leq n_d$, the initial block contains the whole
+record and the subsequent-innovation sum is empty.
+
+\keybox{$Q$ is the squared-error part of the likelihood, not the whole
+likelihood. When $d$ and $s$ are unknown, retain both the covariance determinant
+and the $-\tfrac N2\log s$ term. Differentiation must include the dependence of
+$P_d$ on $d$ and of $e$ on the signal-path coefficients.}
+
+\page
+\section{Reasonable priors without sparsity promotion}
+
+Choose proper, fixed covariance matrices, in the physical units of the
+coefficients. A starting family is
+\begin{align}
+ p(a)&\propto\N(a;0,V_a)\,\mathbf1\{A\text{ is stable}\}, &
+ b&\sim\N(0,V_b), \notag\\
+ f&\sim\N(0,V_f), &
+ p(d)&\propto\N(d;0,V_d)\,\mathbf1\{D\text{ is stable}\}, \notag\\
+ s&\sim\IG(\xi_0,\zeta_0), &&\xi_0,\zeta_0>0. \label{eq:priors}
+\end{align}
+Here $f=(f_2,\ldots,f_{n_f})^\top$. These parameter blocks are independent
+\emph{a priori}, including independence from $s$. Within a stability-truncated
+block, the coefficients need not be independent even if the underlying
+Gaussian covariance is diagonal. Nonzero prior means can be used when justified.
+Empty parameter blocks are omitted, with zero contribution to the log prior.
+
+The variance convention is
+\begin{equation}
+ p(s)=\frac{\zeta_0^{\xi_0}}{\Gamma(\xi_0)}
+           s^{-\xi_0-1}\exp(-\zeta_0/s),\quad s>0.
+ \label{eq:ig}
+\end{equation}
+Equivalently, the precision $\tau=1/s$ has a Gamma prior with shape $\xi_0$
+and \textbf{rate} $\zeta_0$. A Gamma prior directly on $s$ is also valid, but
+does not give the usual conjugate Gaussian variance update.
+
+\subsection{An illustrative calibration, not a universal default}
+For arbitrary block lengths, possible covariance families are
+\[
+ V_a=\tau_a^2I_{n_a},\quad V_b=\tau_b^2I_{n_b},\quad
+ V_f=\diag(\tau_{f,2}^2,\ldots,\tau_{f,n_f}^2),\quad
+ V_d=\tau_d^2I_{n_d},
+\]
+with fixed positive scales chosen in the coefficient units. The Gaussian
+densities for $a$ and $d$ remain restricted to stable filters; individual
+coefficient bounds alone do not enforce higher-order stability. Distinct
+polynomial scales can reflect different plausible contributions of different
+powers over the expected input range. For the variance, one possible choice is
+\[
+ s\sim\IG(3,2\sigma_{\mathrm{ref}}^2),\qquad
+ \E[s]=\sigma_{\mathrm{ref}}^2,\quad
+ \operatorname{SD}(s)=\sigma_{\mathrm{ref}}^2.
+\]
+Choose $\sigma_{\mathrm{ref}}$ from independent calibration, measurement
+specifications or a defensible noise range. Do not use the hidden true variance
+of a simulation as information available to the estimator. These scales should
+be revised if their implied outputs are implausible.
+
+Draw coefficients and variances from the prior, simulate responses for the
+experimental input, and inspect amplitudes, transients and noise correlation.
+This prior predictive check is more informative than inspecting coefficient
+standard deviations in isolation. Stable poles can still imply very large gains.
+
+\subsection{Units and interpretation}
+Fixed Gaussian priors regularize the fit but do not select a sparse model:
+no coefficient is pruned and no coefficient-specific precision is learned.
+An excessively tight prior can materially affect finite-sample estimates.
+
+If rescaling is useful, preserve the normalization. Under $u'=u/s_u$,
+$c'=c/s_c$ and $\alpha'=\alpha/s_c$,
+\[
+ a'=a,\quad d'=d,\quad b'=\frac{s_u}{s_c}b,\quad
+ f'_j=f_js_c^{j-1},\quad s'=s/s_c^2.
+\]
+Transform priors consistently. Arbitrarily subtracting the output mean is not
+innocuous when the static model has no constant term.
+
+\page
+\section{Enforce stability with smooth sampling coordinates}
+\label{sec:coordinates}
+
+This section separates three questions: which physical parameters are allowed,
+how an unrestricted numerical vector represents them, and how their probability
+density must change when the coordinates change. The model orders remain
+arbitrary throughout.
+
+\subsection{Physical parameters and numerical coordinates are different objects}
+The physical unknowns are $x=(\theta,s)$: the coefficients in the Wiener-AR
+equations and the innovation variance. The prior already restricts $a$ and $d$
+to stable denominator polynomials and requires $s>0$. We now seek a smooth,
+one-to-one map $x=g(z)$ from unrestricted real coordinates $z$ onto that domain.
+The transformation implements the chosen domain; it does not add parameters
+or change the forward equations.
+
+For a generic denominator with $m$ free coefficients, write
+\[
+ H(q^{-1};h)=1+\sum_{j=1}^m h_jq^{-j},\qquad
+ C_m(\lambda)=\lambda^m+h_1\lambda^{m-1}+\cdots+h_m.
+\]
+Stability means that the roots of $C_m$ lie strictly inside the unit circle.
+The coefficients $h_j$ are coupled by this condition. Restricting each
+$h_j$ separately to $(-1,1)$ does not, in general, describe the stable region.
+We use $m=n_a$ and $h=a$ for the signal denominator, then $m=n_d$ and $h=d$
+for the noise denominator. Neither order is assigned a numerical value.
+
+\subsection{First map: real coordinates to reflection coefficients}
+Introduce an auxiliary vector $\kappa=(\kappa_1,\ldots,\kappa_m)^\top$.
+These reflection coefficients are coordinates for a stable polynomial;
+they are generally different from its physical coefficients $h$.
+For every real $z_{c,i}$, set
+\begin{equation}
+ \kappa_i=\tanh z_{c,i}
+   =\frac{\exp(2z_{c,i})-1}{\exp(2z_{c,i})+1}\in(-1,1),\qquad
+ \frac{\partial\kappa_i}{\partial z_{c,i}}=1-\kappa_i^2>0.
+ \label{eq:tanhmap}
+\end{equation}
+The inverse is
+\[
+ z_{c,i}=\operatorname{atanh}\kappa_i
+      =\frac12\log\frac{1+\kappa_i}{1-\kappa_i}.
+\]
+Thus every interior value $\kappa_i\in(-1,1)$ corresponds to exactly one
+finite real coordinate. No clipping or boundary rejection is needed to impose
+these interval constraints mathematically. The next map turns $\kappa$ into $h$.
+
+The positive innovation variance uses a separate scalar transformation:
+\begin{equation}
+ s=\exp v,\qquad v=\log s\in\mathbb R,\qquad \frac{ds}{dv}=\exp v=s.
+ \label{eq:variancemap}
+\end{equation}
+The numerator coefficients $b$ and polynomial coefficients $f$ stay in their
+original coordinates; their transformation matrices are identities.
+
+\keybox{The numerical sampler will move in $z$. At every proposed $z$, we
+recover the physical $(a,b,f,d,s)$ and evaluate the same Wiener-AR model and
+physical priors. The maps $\tanh$ and $\exp$ are computational choices; the
+prior on the physical parameters remains the one specified in Section 5.}
+
+\page
+\subsection{Second map: reflection coefficients to the physical polynomial}
+
+The Schur/Levinson step-up recursion builds the denominator one order at a time
+[7]. Here $r$ is the intermediate polynomial order, not a data-time index or
+an MCMC iteration. The superscript in $h_j^{(r)}$ denotes that order, not a power.
+
+Start with an empty coefficient vector $h^{(0)}$. For each $r=1,\ldots,m$,
+take a copy of all coefficients at order $r-1$ and compute
+\begin{equation}
+ \begin{aligned}
+ h_r^{(r)}&=\kappa_r,\\
+ h_j^{(r)}&=h_j^{(r-1)}+\kappa_rh_{r-j}^{(r-1)},
+                   \qquad j=1,\ldots,r-1.
+ \end{aligned} \label{eq:schur}
+\end{equation}
+The new coefficient is $\kappa_r$. Each earlier coefficient receives a correction
+equal to $\kappa_r$ times the coefficient at its reversed position in the
+\emph{previous} vector. All right-hand sides use that previous vector, so an
+implementation must not overwrite it partway through the step.
+
+After the final step, $h=h^{(m)}$; denote this result by $\mathcal T_m(\kappa)$.
+The real Schur stability criterion states that the resulting polynomial is
+strictly stable exactly when all its reflection coefficients satisfy
+$|\kappa_i|<1$ [7]. This is the reason for bounding $\kappa$, rather than
+independently bounding the original polynomial coefficients.
+
+\subsection{Why the map can be inverted}
+At a generic recursion step, a reversed pair obeys
+\[
+ h_j^{(r)}=u_j+\kappa_ru_{r-j},\qquad
+ h_{r-j}^{(r)}=u_{r-j}+\kappa_ru_j,
+ \qquad u=h^{(r-1)}.
+\]
+Subtract $\kappa_r$ times the second equality from the first. The terms in
+$u_{r-j}$ cancel, leaving $(1-\kappa_r^2)u_j$. Hence the step-down inverse is
+\begin{equation}
+ \kappa_r=h_r^{(r)},\qquad
+ h_j^{(r-1)}=
+ \frac{h_j^{(r)}-\kappa_rh_{r-j}^{(r)}}{1-\kappa_r^2},
+ \quad j=1,\ldots,r-1. \label{eq:schurinverse}
+\end{equation}
+Since $|\kappa_r|<1$, the denominator is positive. Repeating backwards recovers
+all reflection coefficients, then $\operatorname{atanh}$ recovers $z_c$.
+This explains the one-to-one correspondence in the interior of the stable domain.
+
+\subsection{Assemble the complete coordinate map}
+Apply the same generic construction independently to $a$ and $d$:
+\begin{equation}
+ a=\mathcal T_{n_a}(\tanh z_a),\qquad
+ d=\mathcal T_{n_d}(\tanh z_d),\qquad s=\exp v.
+ \label{eq:transform}
+\end{equation}
+The sampling vector is
+\[
+ z=(z_a^\top,b^\top,f^\top,z_d^\top,v)^\top\in\mathbb R^{n_\theta+1}.
+\]
+Unknown signal initial states can be appended in their original real
+coordinates. If a denominator has order zero, its coordinate block and recursion
+are empty. The number of unknowns is unchanged by this transformation.
+
+\page
+\subsection{Why a change of coordinates requires a density correction}
+
+Let $\pi_x(x)=p(\theta,s\mid\data)$ denote the intended posterior density with
+respect to physical-coordinate volume $dx$. Consider a small region around
+$z$. Its image under $x=g(z)$ has volume
+\[
+ dx\approx\left|\det Dg(z)\right|\,dz,\qquad
+ Dg(z)=\frac{\partial x}{\partial z}.
+\]
+The same event must have the same probability in either set of coordinates:
+\begin{align}
+ \pi_z(z)\,dz&\approx\pi_x(g(z))\,dx \notag\\
+             &\approx\pi_x(g(z))\,|\det Dg(z)|\,dz. \notag
+\end{align}
+Dividing by $dz$ and taking the limit gives the change-of-variables formula [2]:
+\begin{equation}
+ \boxed{\pi_z(z)=\pi_x(g(z))\,J(z),\qquad J(z)=|\det Dg(z)|.}
+ \label{eq:densitychange}
+\end{equation}
+The factor is multiplied because we used the derivative of the map
+\emph{from sampling coordinates to physical coordinates}. Using the inverse
+derivative would give the reciprocal factor. In log form,
+\[
+ \log\pi_z(z)=\log\pi_x(g(z))+\log J(z).
+\]
+The probability distribution is preserved, although its density height changes
+with the local volume scale. If one samples $\pi_x(g(z))$ without the factor,
+the mapped physical draws instead have density proportional to
+$\pi_x(x)/J(g^{-1}(x))$. The missing factor therefore changes the answer.
+
+\subsection{A scalar illustration of the direction of the correction}
+Consider one auxiliary scalar $\kappa$ with a uniform density $1/2$ on $(-1,1)$.
+This is an illustration of coordinate volume, not a proposed prior for the
+Wiener coefficients. If $\kappa=\tanh z_c$, then
+\[
+ p_{z_c}(z_c)=\frac12(1-\tanh^2 z_c).
+\]
+Indeed, its integral over $\mathbb R$ is
+$\tfrac12[\tanh z_c]_{-\infty}^{\infty}=1$. Equal-length intervals far from
+zero map to shorter intervals near $\kappa=\pm1$, so they must receive less
+probability. Omitting the derivative would leave a constant over $\mathbb R$,
+which cannot even be normalized.
+
+\subsection{A worked correction for the innovation-variance prior}
+The prior is $p_s(s)\propto s^{-\xi_0-1}\exp(-\zeta_0/s)$. Substitute $s=e^v$
+and multiply by $ds/dv=e^v$:
+\begin{equation}
+ \begin{aligned}
+ p_v(v)&=p_s(e^v)e^v
+       \propto e^{-(\xi_0+1)v}\exp(-\zeta_0e^{-v})e^v,\\
+ \log p_v(v)&=\const-\xi_0v-\zeta_0e^{-v}.
+ \end{aligned} \label{eq:variancepriorchange}
+\end{equation}
+Thus the extra $+v$ removes one power of $s$ from the density expression.
+The physical prior remains inverse-gamma; its density in the log-variance
+coordinate has a different functional form.
+
+\page
+\subsection{Derive the Jacobian of one denominator map, step by step}
+
+The denominator map is the composition $z_c\mapsto\kappa\mapsto h$.
+By the chain rule for matrices and multiplicativity of determinants,
+\begin{equation}
+ \mathcal J_m(z_c)
+ =\left|\det\frac{\partial h}{\partial\kappa}\right|
+  \left|\det\frac{\partial\kappa}{\partial z_c}\right|.
+ \label{eq:jacchain}
+\end{equation}
+\textbf{The first coordinate map.} Each $\kappa_i$ depends only on $z_{c,i}$,
+so \eqref{eq:tanhmap} gives a diagonal matrix and its determinant:
+\[
+ \frac{\partial\kappa}{\partial z_c}
+      =\diag(1-\kappa_1^2,\ldots,1-\kappa_m^2),\qquad
+ \det\frac{\partial\kappa}{\partial z_c}
+      =\prod_{i=1}^m(1-\kappa_i^2).
+\]
+\textbf{One recursion step.} Put $u=h^{(r-1)}$ and let $R_{r-1}$ reverse the
+order of its entries. Equation~\eqref{eq:schur} can be written
+\[
+ h^{(r)}=
+ \begin{pmatrix}(I_{r-1}+\kappa_rR_{r-1})u\\\kappa_r\end{pmatrix}.
+\]
+Differentiate with respect to the input vector $(u^\top,\kappa_r)^\top$:
+\begin{equation}
+ \frac{\partial h^{(r)}}{\partial(u,\kappa_r)}=
+ \begin{pmatrix}
+ I_{r-1}+\kappa_rR_{r-1}&R_{r-1}u\\
+ 0^\top&1
+ \end{pmatrix}. \label{eq:recursionjacobian}
+\end{equation}
+It is block triangular. Its determinant is therefore
+$\det(I_{r-1}+\kappa_rR_{r-1})$; the column $R_{r-1}u$ does not affect it.
+
+\textbf{Evaluate that determinant.} Reversing twice returns the original
+vector, so $R_{r-1}^2=I$. Its eigenvectors can be symmetric or antisymmetric
+under reversal. Each mirrored pair of coordinates gives one of each kind; if
+there is an unpaired middle coordinate, it is symmetric. Consequently there
+are $\lceil(r-1)/2\rceil$ eigenvalues $+1$ and $\lfloor(r-1)/2\rfloor$
+eigenvalues $-1$. The eigenvalues of $I+\kappa_rR$ are thus $1+\kappa_r$ and
+$1-\kappa_r$, giving
+\begin{equation}
+ \det(I_{r-1}+\kappa_rR_{r-1})
+   =(1+\kappa_r)^{\lceil(r-1)/2\rceil}
+    (1-\kappa_r)^{\lfloor(r-1)/2\rfloor}. \label{eq:reversaldeterminant}
+\end{equation}
+Both bases are positive because $|\kappa_r|<1$.
+
+\textbf{Compose all recursion steps.} The order-one step is $h^{(1)}=\kappa_1$
+and has determinant one. Each later step transforms the earlier coefficients
+and appends the next reflection coefficient. Repeated application of the chain
+rule multiplies their determinants. Combining with \eqref{eq:jacchain} yields
+\begin{equation}
+ \mathcal J_m(z_c)=
+ \prod_{i=1}^m(1-\kappa_i^2)
+ \prod_{r=2}^m
+ (1+\kappa_r)^{\lceil(r-1)/2\rceil}
+ (1-\kappa_r)^{\lfloor(r-1)/2\rfloor}.
+ \label{eq:jacproduct}
+\end{equation}
+
+\page
+\subsection{Combine the blocks and form the actual sampling target}
+
+Taking logarithms of \eqref{eq:jacproduct} turns every product into a sum:
+\begin{equation}
+ \begin{aligned}
+ \log\mathcal J_m(z_c)
+  ={}&\sum_{i=1}^m\log(1-\kappa_i^2)\\
+    &+\sum_{r=2}^m\left[
+       \left\lceil\frac{r-1}{2}\right\rceil\log(1+\kappa_r)
+       +\left\lfloor\frac{r-1}{2}\right\rfloor\log(1-\kappa_r)\right].
+ \end{aligned} \label{eq:genericjacobian}
+\end{equation}
+For $x=(a,b,f,d,s)$ and $z=(z_a,b,f,z_d,v)$, the full derivative is block
+diagonal: the $a$ block depends only on $z_a$, the $d$ block only on $z_d$,
+and $s$ only on $v$. The $b$ and $f$ blocks are identities and have determinant
+one. Equation~\eqref{eq:variancemap} supplies the remaining factor $s=e^v$.
+Therefore
+\begin{equation}
+ \boxed{\log J(z)=\log\mathcal J_{n_a}(z_a)+\log\mathcal J_{n_d}(z_d)+v.}
+ \label{eq:jacobian}
+\end{equation}
+An empty denominator block contributes zero to $\log J$: set $\mathcal J_0=1$.
+Unchanged real initial-state coordinates also contribute determinant one.
+
+Let $\ell(\theta,s)$ be the physical log posterior, including the likelihood and
+the priors. The numerical target is
+\[
+ \widetilde\ell(z)=\ell(\theta(z),e^v)
+      +\log\mathcal J_{n_a}(z_a)+\log\mathcal J_{n_d}(z_d)+v.
+\]
+For the Gaussian coefficient priors and stationary-noise likelihood used here,
+the formula in the next section expands to
+\begin{equation}
+ \begin{aligned}
+ \widetilde\ell(z)={}&\const-\left(\frac N2+\xi_0\right)v
+  -\left(\frac{Q(\theta(z))}{2}+\zeta_0\right)e^{-v}\\
+ &-\frac12\log|P_{d(z)}|-\frac12R_{\theta(z)}
+  +\log\mathcal J_{n_a}(z_a)+\log\mathcal J_{n_d}(z_d).
+ \end{aligned} \label{eq:fullytransformedtarget}
+\end{equation}
+Here $R_\theta$ is the Gaussian-prior quadratic form defined in the next
+section. The physical coefficient of $\log s$ is $-(N/2+\xi_0+1)$; the variance
+Jacobian $+v$ changes it to $-(N/2+\xi_0)$ above. Add an initial-state log prior
+if those states are unknown. The determinant of $P_d$ belongs to the likelihood;
+it does not replace any factor in $J$.
+
+\subsection{What to compute, and when software does the correction}
+At each proposed $z$: compute both reflection vectors, run both recursions,
+set $s=e^v$, evaluate the physical likelihood and priors, evaluate the two
+log Jacobians, and add their sum and $v$ to the physical log posterior.
+Differentiate that complete scalar target for HMC.
+
+Automatic differentiation computes derivatives of the expressions supplied;
+it does not by itself insert a missing change-of-variables correction.
+A package can insert corrections for constraints it transforms internally.
+For example, if it handles a declared positive $s$ through a log transform,
+its $+v$ is already included; do not add it twice. A user-defined recursion
+from $z_a,z_d$ to $a,d$ still needs its own correction [2]. These formulas assume
+the explicit $\tanh$ and $\exp$ maps above; use the actual map if it differs.
+
+Assigning Gaussian priors directly to $z_a,z_d$ is a different prior model.
+To preserve the physical Gaussian priors, evaluate those priors at $a(z_a)$
+and $d(z_d)$ and retain the derived Jacobians. Finally, use stable log expressions
+near the boundaries and avoid clipping, which destroys the stated bijection.
+
+\page
+\section{The posterior target and one complete evaluation}
+\label{sec:target}
+
+Bayes' rule gives
+\[
+ p(\theta,s\mid\data)\propto L(\theta,s)\,p(a)p(b)p(f)p(d)p(s).
+\]
+No evaluation of the evidence $p(\data)$ is needed. With zero-mean Gaussian
+priors, define
+\[
+ R_\theta=a^\top V_a^{-1}a+b^\top V_b^{-1}b
+                   +f^\top V_f^{-1}f+d^\top V_d^{-1}d.
+\]
+For the stationary AR noise model of arbitrary order, the log density with
+respect to physical coordinates $(\theta,s)$, up to parameter-independent
+constants, is
+\begin{equation}
+ \boxed{\begin{aligned}
+ \ell(\theta,s)
+   ={}&-\left(\frac N2+\xi_0+1\right)\log s
+       -\frac{Q(\theta)/2+\zeta_0}{s}\\
+     &-\frac12\log|P_d|-\frac12R_\theta .
+ \end{aligned}} \label{eq:physicaltarget}
+\end{equation}
+Outside the stable region or for $s\leq0$, the density is zero. Fixed prior
+normalizing constants can be omitted. If $x_0$ is unknown, use
+$Q(\theta,x_0)$ and add $\log p(x_0)$; do not silently fix it when sampling.
+For $n_d=0$, interpret $\log|P_d|$ as zero. For a conditional likelihood,
+use $Q_{\mathrm{cond}}$ and $N-n_0$, and omit the initial-block determinant.
+
+The numerical sampler targets the density in $z$ coordinates:
+\begin{equation}
+ \widetilde\ell(z)=\ell\bigl(\theta(z),s(z)\bigr)+\log J(z).
+ \label{eq:transformedtarget}
+\end{equation}
+The stationary-noise determinant term in \eqref{eq:physicaltarget} and the
+change-of-variables term in \eqref{eq:transformedtarget} have different origins.
+Both are required for this model and this choice of sampling coordinates.
+
+\subsection{What the computer does at each proposed parameter vector}
+\begin{enumerate}
+ \item Transform $z$ to $(a,b,f,d,s)$ using \eqref{eq:transform}.
+ \item Simulate $\alpha_t$ over the fixed input record, using the specified
+ initial state and any available prehistory.
+ \item Form $\beta_t=\alpha_t+\sum_{j=2}^{n_f}f_j\alpha_t^j$ and
+ $e_t=c_t-\beta_t$.
+ \item Whiten the residuals, include the chosen initial-noise contribution,
+ and compute $Q$ and the log likelihood.
+ \item Add coefficient and variance log priors, any initial-state prior,
+ and the transformation log Jacobian.
+ \item Return $\widetilde\ell(z)$ and its gradient
+ $\nabla_z\widetilde\ell(z)$ to the sampler.
+\end{enumerate}
+Automatic differentiation can propagate through the deterministic recursion.
+No separate sampling of the entire $\alpha$, $\beta$ or innovation sequence is
+needed for this model. HMC requires first derivatives, not an inverse Hessian.
+
+For a physical-model baseline, the exact IIR recursion is the clearest forward
+model. If an FSM approximation is used, its frequency grid, truncation and
+boundary convention become part of the likelihood approximation and must be
+controlled. The Bayesian calculation should not silently target a different
+forward model from the comparison methods.
+
+\page
+\section{How one Hamiltonian Monte Carlo transition works}
+
+MCMC constructs a correlated sequence whose stationary distribution is the
+posterior. Under appropriate convergence conditions, averages along that
+sequence approximate posterior expectations. It does not seek a sequence of
+ever smaller losses. A draw with a lower posterior density can be an entirely
+appropriate part of the sample.
+
+For a concrete explanation, consider fixed-length HMC [3]. Let $z_k$ be the
+current unconstrained position and let $\mathsf M$ be a positive definite
+momentum covariance, fixed during retained sampling. Introduce an auxiliary
+momentum $p$ and define
+\begin{equation}
+ p\sim\N(0,\mathsf M),\qquad
+ H(z,p)=-\widetilde\ell(z)+\frac12p^\top\mathsf M^{-1}p.
+ \label{eq:hamiltonian}
+\end{equation}
+The momentum is an algorithmic variable, not a state or noise source of the
+Wiener system. Its normalization is constant for a fixed $\mathsf M$.
+
+\subsection{Step 1: refresh the momentum}
+Draw a new $p_0$ and record $H_0=H(z_k,p_0)$. This random refresh allows the
+chain to explore different directions across successive transitions.
+
+\subsection{Step 2: integrate a reversible proposal trajectory}
+Starting at $(z_k,p_0)$, take $L$ leapfrog steps of length $\epsilon$. One step is
+\begin{align}
+ p_{1/2}&=p+\frac\epsilon2\nabla_z\widetilde\ell(z), \notag\\
+ z'&=z+\epsilon\mathsf M^{-1}p_{1/2}, \notag\\
+ p'&=p_{1/2}+\frac\epsilon2\nabla_z\widetilde\ell(z').
+ \label{eq:leapfrog}
+\end{align}
+Each new gradient evaluation repeats the forward simulation and log-target
+calculation from Section~\ref{sec:target}. The leapfrog construction approximately conserves
+$H$ and preserves volume. Reverse the final momentum to obtain the standard
+reversible proposal; this reversal leaves its kinetic energy unchanged.
+
+\subsection{Step 3: correct numerical integration error}
+For the proposal $(z_\star,p_\star)$, accept with probability
+\begin{equation}
+ a_{\mathrm{acc}}=\min\{1,\exp[H_0-H(z_\star,p_\star)]\}.
+ \label{eq:acceptance}
+\end{equation}
+Generate $U\sim\mathrm{Uniform}(0,1)$. If $U<a_{\mathrm{acc}}$, set
+$z_{k+1}=z_\star$; otherwise set $z_{k+1}=z_k$. Discard the auxiliary momentum
+and refresh it at the next transition. A rejected transition still contributes
+a repeated position to the chain; removing such repetitions changes its law.
+
+\keybox{In exact arithmetic with a correct implementation, the Metropolis
+correction accounts for finite leapfrog error. Finite run length and poor
+exploration still cause Monte Carlo error. MCMC does not replace the posterior
+with a Gaussian approximation, and it does not guarantee that a short run has
+explored every posterior mode.}
+
+\page
+\section{Use NUTS in practice and run several chains}
+
+Fixed-length HMC illustrates the mechanics, but choosing $L$ by hand is
+inconvenient. A mature implementation of the No-U-Turn Sampler (NUTS) is a
+reasonable first implementation choice [1]. It builds a trajectory of candidate
+points and stops its expansion when continued movement begins to turn back.
+The implementation uses a valid candidate-selection rule over the trajectory;
+it is not simply fixed-length HMC with its last endpoint accepted by
+\eqref{eq:acceptance}.
+
+During warm-up, the implementation adapts the integration step size and a
+metric that helps handle different scales and correlations. Retained sampling
+then uses the adapted settings. Keep the package's divergence, trajectory
+length and acceptance diagnostics. A longer trajectory is more expensive than
+a short one, so MCMC iteration counts alone do not measure computation.
+
+\subsection{A concrete initial run protocol}
+The following counts are a starting experiment, not a convergence guarantee.
+\begin{enumerate}
+ \item \textbf{Fix the data and statistical model.} Save the record, input
+ history, model orders, initial-state treatment, priors and physical units.
+ All chains must target exactly this same posterior.
+ \item \textbf{Choose dispersed plausible starting positions.} Use four
+ different stable coefficient vectors and positive variances, converted to
+ $z$ coordinates. Check that every starting log target and gradient is finite.
+ A fitted or MAP estimate can initialize one chain, but all chains should not
+ be copies of the same point.
+ \item \textbf{Warm up each chain.} For example, use 1,000 warm-up transitions
+ per chain. Let the sampler adapt and exclude these transitions from posterior
+ summaries.
+ \item \textbf{Retain a first batch.} For example, retain 2,000 transitions
+ per chain. This yields 8,000 raw draws across four chains, not 8,000 independent
+ draws. Preserve chain identities for diagnostics.
+ \item \textbf{Assess exploration and precision.} Use the checks in Section~\ref{sec:diagnostics}.
+ If exploration is sound but Monte Carlo errors remain too large, run longer.
+ If there are unresolved divergences or modes, investigate the geometry,
+ initialization or model before interpreting a longer run as a solution.
+ \item \textbf{Save enough to reproduce the result.} Store physical draws,
+ sampler diagnostics, seeds, warm-up settings, software versions, elapsed time
+ and the exact model and configuration used.
+\end{enumerate}
+
+\subsection{Two different meanings of burn-in}
+\textbf{Data burn-in} propagates the simulated physical filters before retaining
+the observation record. It affects the signal and noise initial distributions.
+\textbf{MCMC warm-up} adapts the sampler and moves chains away from their
+starting points. It does not modify the data or remove an incorrectly modeled
+physical transient. These two operations solve different problems.
+
+No new innovation realizations are generated inside a likelihood evaluation.
+Randomness during sampling comes from the MCMC algorithm. New physical
+innovations are generated later for posterior predictive simulation.
+
+\page
+\section{Decide whether the posterior sample is trustworthy}
+\label{sec:diagnostics}
+
+Inspect the physical coefficients, $s$, any initial states, and important
+derived quantities. Trace and rank plots should show chains exploring the
+same distribution rather than remaining separated. Pair plots can reveal
+strong dependence, curved ridges or separate solutions.
+
+{\renewcommand{\arraystretch}{1.22}
+\begin{tabular}{@{}p{.22\linewidth}p{.72\linewidth}@{}}
+\toprule
+\textbf{Diagnostic} & \textbf{Interpretation and first action}\\
+\midrule
+Rank-normalized $\widehat R$ & Compare within-chain and between-chain behavior.
+Aim for $\widehat R<1.01$ for the reported quantities. Larger values call for
+investigation of poor mixing or different explored regions.\\
+Bulk and tail ESS & Account for dependence between draws. With four chains,
+a bulk ESS above 400 is a baseline check, not a universal accuracy target.
+Tail ESS matters for interval endpoints and tail probabilities.\\
+Divergences & Investigate every post-warm-up divergence before final inference.
+They can indicate that numerical trajectories fail in an important part of
+the posterior. Longer runs alone need not solve this.\\
+Trajectory and energy checks & Repeated maximum-tree-depth events indicate
+costly exploration. Low energy-transition efficiency can reveal poor geometry.
+Check sampler warnings and parameter-pair plots.\\
+\bottomrule
+\end{tabular}}
+
+These are practical screening rules, consistent with Stan's diagnostic
+guidance [4], not a proof that every possible mode has been discovered.
+
+\subsection{Quantify Monte Carlo error separately from posterior uncertainty}
+For a scalar quantity $g(\theta,s)$, the posterior standard deviation describes
+uncertainty about that quantity given the record. The Monte Carlo standard
+error (MCSE) describes numerical uncertainty in its estimated posterior mean.
+For a well-mixed stationary sample, a useful interpretation is
+\begin{equation}
+ \operatorname{MCSE}(\overline g)\approx
+ \frac{\operatorname{SD}_{\mathrm{post}}(g)}{\sqrt{\operatorname{ESS}_{\mathrm{mean}}(g)}}.
+ \label{eq:mcse}
+\end{equation}
+Use the software's appropriate mean-specific ESS or direct MCSE estimate;
+bulk ESS is a general diagnostic rather than exactly the same statistic [5].
+
+For example, a desired MCSE below $2\%$ of the posterior standard deviation
+suggests a mean-specific ESS of roughly 2,500. This illustrates why the
+baseline ESS of 400 need not suffice for precise numerical reporting.
+Quantile MCSE requires its own calculation.
+
+\subsection{If diagnostics are unsatisfactory}
+Check likelihood signs and initial conditions first. Then inspect parameter
+scales and posterior dependence, use realistic priors and improve smooth
+parameterizations. A smaller integration step may help some divergences, but
+does not cure nonidentifiability or guarantee movement between distant modes.
+If multiple modes persist, report the issue and consider methods designed for
+multimodal exploration. Do not pool chains stuck in different regions as though
+their relative frequencies were correct posterior weights.
+
+\page
+\section{Turn draws into parameter and prediction results}
+
+After satisfactory diagnostics, let $(\theta^{(m)},s^{(m)})$, $m=1,\ldots,M$,
+be the retained physical draws, combining chains only for summaries. For every
+coefficient and the variance, report a posterior mean or median, posterior
+standard deviation and a $95\%$ equal-tailed credible interval. Include a
+correlation plot when blocks compensate for each other.
+\begin{equation}
+ \widehat\theta_{\mathrm{mean}}=\frac1M\sum_{m=1}^M\theta^{(m)},\qquad
+ I_j=[q_{0.025}(\theta_j),q_{0.975}(\theta_j)].
+ \label{eq:summaries}
+\end{equation}
+Transform each draw before summarizing: in general
+$\E[\theta(z)]\neq\theta(\E[z])$, and
+$\E[\sqrt{s}]\neq\sqrt{\E[s]}$. If a physical-coordinate MAP is needed,
+maximize the physical density \eqref{eq:physicaltarget}; maximizing the
+transformed density \eqref{eq:transformedtarget} defines a different MAP.
+
+\subsection{Noise-free output uncertainty}
+For each posterior draw, propagate the linear block and static nonlinearity to
+obtain $\beta_t^{(m)}$. Pointwise quantiles describe uncertainty about the
+noise-free response due to uncertain parameters and, where sampled, initial
+states. The posterior mean response is the average of these trajectories:
+\[
+ \widehat\beta_t=\frac1M\sum_m\beta_t^{(m)}.
+\]
+It generally differs from evaluating the nonlinear forward model at
+$\widehat\theta_{\mathrm{mean}}$.
+
+\subsection{Predict a new noisy observation}
+For arbitrary AR order and a known next input, a one-step prediction conditional
+on an observed history containing the required lags is
+\begin{align}
+ e_{t+1-i}^{(m)}&=c_{t+1-i}-\beta_{t+1-i}^{(m)},\quad i=1,\ldots,n_d, &
+ \nu_{t+1}^{(m)}&\sim\N(0,s^{(m)}), \notag\\
+ c_{t+1}^{(m)}&=\beta_{t+1}^{(m)}-\sum_{i=1}^{n_d}d_i^{(m)}e_{t+1-i}^{(m)}
+                                      +\nu_{t+1}^{(m)}. \label{eq:predictive}
+\end{align}
+These predictive intervals include both parameter uncertainty and new
+innovation noise, so they have a different interpretation from intervals for
+$\beta$. For several future steps, recursively propagate the AR noise and
+generate fresh innovations at each step. For an independent repeated record,
+also draw its initial noise state under the specified initialization model.
+
+\subsection{Interpretation for the manuscript's numerical studies}
+A credible interval is a posterior probability statement under the chosen
+model and prior; it is not automatically a frequentist coverage guarantee.
+Assess coverage, bias and RMSE by repeating identification on independently
+generated datasets. Within one dataset, MCMC draws measure posterior
+uncertainty and numerical integration error, not the sampling distribution
+across experiments.
+
+Numerical inference does not intrinsically reduce statistical precision when
+it accurately explores the intended posterior. Precision still depends on
+record length, excitation, model correctness and prior information. Posterior
+means can have finite-sample bias, and a poorly mixed numerical approximation
+can introduce additional error.
+
+\page
+\section{Validate the implementation before a large study}
+
+Start with a short synthetic record and validate identities that have an
+independent answer. Knowing simulation truth is useful for debugging and
+later performance assessment; it is not information supplied to the estimator.
+
+\subsection{Likelihood and gradient checks}
+For stable coefficient vectors of several AR orders, compare the log density
+calculated from the dense covariance $sK(d)$ with \eqref{eq:Qstationary}.
+They must agree
+to numerical precision for the same residual vector and initial-state model.
+Separately check the physical-to-unconstrained Jacobian and compare automatic
+gradients with central finite differences at interior parameter points.
+
+Check special cases: $d=0$ reduces to independent output noise, $f_j=0$ for
+$j\geq2$ gives a linear signal path, and known zero noise prehistory gives
+the corresponding conditional innovation recursion. Include tests for the
+actual beginning-of-record convention, where indexing mistakes are common.
+
+\subsection{Two analytic conditional distributions for additional checks}
+Although the joint posterior for $(a,b,f,d,s)$ is generally nonconjugate,
+some full conditional distributions are simple [6]. These identities also
+offer optional alternatives to sampling every parameter by HMC.
+
+With $\theta$ and any signal initial state fixed, the inverse-gamma variance
+prior gives
+\begin{equation}
+ s\mid\theta,\data\sim
+ \IG\!\left(\xi_0+\frac N2,\;\zeta_0+\frac{Q(\theta)}2\right).
+ \label{eq:conditionalvariance}
+\end{equation}
+Here $N$ corresponds to the full stationary likelihood. Replace it by the
+number of conditional residual contributions if using a conditional likelihood.
+The independence of the coefficient priors from $s$ matters to this formula.
+
+Next fix $(a,b,d,s)$ and the signal initial state. Define $Z_{t,j}=\alpha_t^{j+1}$,
+$j=1,\ldots,n_f-1$, and $w=c-\alpha$. With $f\sim\N(0,V_f)$,
+\begin{align}
+ S_f&=\left(V_f^{-1}+\frac1s Z^\top K(d)^{-1}Z\right)^{-1}, \notag\\
+ m_f&=S_f\frac1s Z^\top K(d)^{-1}w,
+ & f\mid a,b,d,s,\data&\sim\N(m_f,S_f). \label{eq:conditionalf}
+\end{align}
+Use whitening or solves to implement these expressions. This is a Gaussian
+conditional for the polynomial coefficients, not a closed-form joint posterior
+for the rational and AR coefficients.
+
+\subsection{Optional Gibbs updates}
+One can alternate an exact draw from \eqref{eq:conditionalvariance} with a valid
+MCMC update of the remaining parameters, or use \eqref{eq:conditionalf} as
+another Gibbs block. The resulting hybrid sampler still needs convergence
+diagnostics and can mix poorly when blocks are strongly dependent. Joint NUTS
+for the complete $(\theta,s)$ vector remains a straightforward first baseline; analytic
+conditional updates are an optional refinement, not a prerequisite.
+
+Finally, inspect posterior predictive behavior, whitened residual
+autocorrelation and sensitivity to reasonable prior scales. A single successful
+fit is not a finite-sample bias or coverage study.
+
+\page
+\section{Implementation order, computational cost and references}
+
+\subsection{A practical order of work}
+\begin{enumerate}
+ \item Fix the forward model and initial conditions; implement and validate
+ the scalar innovation likelihood and physical priors.
+ \item Add smooth stability transformations, their Jacobian and differentiable
+ recursions; validate log targets and gradients.
+ \item Run a small four-chain NUTS pilot. Resolve diagnostic problems and
+ quantify Monte Carlo errors before increasing record lengths or repetitions.
+ \item Save parameter summaries, credible intervals, predictions, diagnostics
+ and computational cost for every dataset. Then add this estimator to the
+ initialization and record-length experiments using the same observed records
+ and explicitly chosen posterior point estimate.
+\end{enumerate}
+
+For fixed orders, a forward likelihood evaluation is linear in record length,
+with approximate cost
+\[
+ O\!\left(N(n_a+n_b+n_f+n_d)\right)
+\]
+when evaluating the polynomial directly.
+Differentiation and repeated trajectory steps increase the constant and total
+work. A NUTS transition can require many full-record gradient evaluations.
+Record wall time, target/gradient evaluations and effective samples per second.
+Compare posterior-mean accuracy against GHAM and other estimators on the same
+datasets, while reporting the extra uncertainty information MCMC provides.
+Optimizer iterations and NUTS transitions are not comparable units of cost.
+
+\subsection{References and further reading}
+The likelihoods, stability map and posterior formulas above specialize standard
+Gaussian and MCMC calculations to the manuscript's Wiener-AR model. The
+following primary sources document the sampling machinery and diagnostics.
+
+{\small
+\begin{enumerate}
+ \item M. D. Hoffman and A. Gelman (2014). \emph{The No-U-Turn Sampler:
+ Adaptively Setting Path Lengths in Hamiltonian Monte Carlo}. Journal of
+ Machine Learning Research 15(47), 1593--1623.
+ \href{https://www.jmlr.org/papers/v15/hoffman14a.html}{Paper and full text}.
+
+ \item Stan User's Guide. \emph{Reparameterization and change of variables}.
+ \href{https://mc-stan.org/docs/stan-users-guide/reparameterization.html}{Official guide}.
+ See also the Reference Manual's
+ \href{https://mc-stan.org/docs/reference-manual/transforms.html}{constraint transforms}.
+ Transformation conventions must match the chosen implementation.
+
+ \item R. M. Neal (2011). \emph{MCMC Using Hamiltonian Dynamics}. In
+ Handbook of Markov Chain Monte Carlo, Chapter 5.
+ \href{https://arxiv.org/abs/1206.1901}{Author manuscript}.
+
+ \item Stan. \emph{How to Diagnose and Resolve Convergence Problems}.
+ \href{https://mc-stan.org/learn-stan/diagnostics-warnings.html}{Official diagnostic guidance}.
+ Practical thresholds are checks, not convergence proofs.
+
+ \item Stan Reference Manual. \emph{Posterior Analysis}.
+ \href{https://mc-stan.org/docs/reference-manual/analysis.html}{ESS and Monte Carlo error}.
+
+ \item K. P. Murphy (2007). \emph{Conjugate Bayesian Analysis of the Gaussian
+ Distribution}.
+ \href{https://www.cs.ubc.ca/~murphyk/Papers/bayesGauss.pdf}{Technical note}.
+ Gaussian variance and precision conventions; conditional conjugacy should
+ not be confused with joint conjugacy for this nonlinear model.
+
+ \item MathWorks. \emph{Reflection coefficients and prediction polynomials}.
+ \href{https://www.mathworks.com/help/signal/ref/rc2poly.html}{Step-up recursion}
+ and \href{https://www.mathworks.com/help/signal/ref/poly2rc.html}{stability criterion}.
+ The Jacobian in this note follows by differentiating the stated recursion.
+\end{enumerate}
+Sampling references checked on 29 October 2026; coordinate-transformation
+references rechecked on 30 October 2026. The illustrative run
+lengths and prior scales in this note are proposed starting choices, not
+empirical performance results.
+}
+\end{document}

@@ -23,7 +23,8 @@ for c=1:C
             values=reshape(estimates(c,j,m,:,:),[R P]);
             keep=all(isfinite(values),2);
             if strcmp(char(s.summary_population),'converged')
-                keep=keep & reshape(states(c,j,m,:),[R 1])=="converged";
+                keep=keep & ismember(reshape(states(c,j,m,:),[R 1]), ...
+                    ["converged","sampling_complete"]);
             end
             used(c,j,m)=sum(keep);
             if ~any(keep), continue; end
@@ -101,7 +102,7 @@ for c=1:C
     end
     title(tl,[char(payload.parametrization) ' / ' strrep(resolutions{c},'_','\_') ...
         ': mean per-run parameter-error norm'],'Interpreter','latex');
-    subtitle(tl,{'Six parameters; original scale; pointwise approximate 95% MC intervals', ...
+    subtitle(tl,{sprintf('%d parameters; original scale; pointwise approximate 95%% MC intervals',P), ...
         'Linear y axes within [0,1]; outlying means/intervals clipped; triangles mark clipped means'}, ...
         'Interpreter','none','FontSize',9);
     figures(c)=fig;

@@ -12,10 +12,11 @@ M=numel(names); P=numel(s.theta_true); L=numel(lengths); C=numel(resolutions);
 bias=reshape(s.bias,[C L M P]); se=reshape(s.mcse,[C L M P]); rmse=reshape(s.rmse,[C L M P]);
 finite=reshape(s.finite_count,[C L M]); converged=reshape(s.converged_count,[C L M]);
 failed=reshape(s.failed_count,[C L M]); skipped=reshape(s.skipped_count,[C L M]);
-stalled=NaN(C,L,M); limited=NaN(C,L,M);
+stalled=NaN(C,L,M); limited=NaN(C,L,M); sampling_warning=zeros(C,L,M);
 if isfield(s,'statuses')
     states=reshape(string(s.statuses),[C L M double(s.n_runs)]);
     stalled=sum(states=="stalled",4); limited=sum(states=="max_iterations",4);
+    sampling_warning=sum(states=="sampling_warning",4);
 end
 if isfield(s,'selected_count')
     used=reshape(s.selected_count,[C L M]);
@@ -25,7 +26,28 @@ else
     used=finite;
 end
 outcome_report=build_outcome_report(backend,resolutions,lengths,names,double(s.n_runs), ...
-    finite,converged,stalled,limited,failed,skipped,used,char(s.summary_population));
+    finite,converged,stalled,limited,sampling_warning,failed,skipped,used,char(s.summary_population));
+runtime=NaN(C,L,M,double(s.n_runs));
+for field={'total_wall_time','total_wall_time_runs','total_time_runs'}
+    if isfield(s,field{1}) && ~isempty(s.(field{1}))
+        runtime=reshape(double(s.(field{1})),[C L M double(s.n_runs)]); break;
+    end
+end
+outcome_report.MeanTotalWallTimeSec=NaN(height(outcome_report),1);
+outcome_report.StdTotalWallTimeSec=NaN(height(outcome_report),1);
+outcome_report.TimingAttempts=zeros(height(outcome_report),1);
+row=0;
+for c=1:C
+    for j=1:L
+        for m=1:M
+            row=row+1; times=reshape(runtime(c,j,m,:),[],1);
+            times=times(isfinite(times) & times>=0);
+            outcome_report.TimingAttempts(row)=numel(times);
+            if ~isempty(times), outcome_report.MeanTotalWallTimeSec(row)=mean(times); end
+            if numel(times)>1, outcome_report.StdTotalWallTimeSec(row)=std(times); end
+        end
+    end
+end
 export=isfield(options,'export_figures') && options.export_figures;
 export_outcomes=export && (~isfield(options,'export_outcomes') || options.export_outcomes);
 folder=fullfile(fileparts(fileparts(mfilename('fullpath'))),'figs');
@@ -115,7 +137,7 @@ for c=1:C
 end
 fprintf('\n%s record-length outcomes (counts out of Trials; percentages are in the table figures/CSV):\n',backend);
 disp(outcome_report(:,{'Resolution','N','Method','Trials','Finite','Converged', ...
-    'Stalled','MaxIterations','Failed','Skipped','Used'}));
+    'Stalled','MaxIterations','SamplingWarning','Failed','Skipped','Used'}));
 if export && (~isfield(options,'export_statistics') || options.export_statistics)
     writetable(outcome_report,fullfile(folder, ...
         ['record_length_outcomes_' char(payload.experiment_name) '_' lower(backend) '.csv']));
@@ -176,14 +198,14 @@ end
 end
 
 function report=build_outcome_report(backend,resolutions,lengths,names,trials, ...
-    finite,converged,stalled,limited,failed,skipped,used,population)
-rows=cell(numel(resolutions)*numel(lengths)*numel(names),21); i=0;
+    finite,converged,stalled,limited,sampling_warning,failed,skipped,used,population)
+rows=cell(numel(resolutions)*numel(lengths)*numel(names),23); i=0;
 for c=1:numel(resolutions)
     for j=1:numel(lengths)
         for m=1:numel(names)
             i=i+1;
             counts=double([finite(c,j,m),converged(c,j,m),stalled(c,j,m), ...
-                limited(c,j,m),failed(c,j,m),skipped(c,j,m),used(c,j,m)]);
+                limited(c,j,m),sampling_warning(c,j,m),failed(c,j,m),skipped(c,j,m),used(c,j,m)]);
             values=reshape([counts;100*counts/trials],1,[]);
             rows(i,:)=[{backend,resolutions{c},lengths(j),method_figure_label(names{m}), ...
                 names{m},trials},num2cell(values),{population}];
@@ -192,7 +214,8 @@ for c=1:numel(resolutions)
 end
 report=cell2table(rows,'VariableNames',{'Parametrization','Resolution','N','Method','MethodID', ...
     'Trials','Finite','FinitePct','Converged','ConvergedPct','Stalled','StalledPct', ...
-    'MaxIterations','MaxIterationsPct','Failed','FailedPct','Skipped','SkippedPct', ...
+    'MaxIterations','MaxIterationsPct','SamplingWarning','SamplingWarningPct', ...
+    'Failed','FailedPct','Skipped','SkippedPct', ...
     'Used','UsedPct','SummaryPopulation'});
 end
 
@@ -202,24 +225,24 @@ n=height(rows); header_height=1.6;
 fig=figure('Color','w','Name',[backend ' record-length outcomes table: ' resolution], ...
     'Units','centimeters','Position',[2 2 34 max(12,4+0.47*(n+header_height))]);
 annotation(fig,'textbox',[.02 .945 .96 .04],'String', ...
-    latex_literal([backend ' / ' resolution ': optimization outcomes']), ...
+    latex_literal([backend ' / ' resolution ': estimation outcomes']), ...
     'Interpreter','latex','FontWeight','bold','FontSize',11,'EdgeColor','none');
 annotation(fig,'textbox',[.02 .905 .96 .035],'String', ...
     latex_literal(['Population: ' population '. Outcome cells show count (% of all attempted trials).']), ...
     'Interpreter','latex','FontSize',9,'EdgeColor','none');
 ax=axes(fig,'Position',[.02 .095 .96 .795]); hold(ax,'on');
 xlim(ax,[0 1]); ylim(ax,[0 n+header_height]); axis(ax,'off'); box(ax,'on');
-widths=[.06 .15 .045 repmat(.105,1,7)]; edges=[0 cumsum(widths/sum(widths))];
-headers={'N','Method','Trials','Finite','Converged','Stalled', ...
-    'Max iterations','Failed / invalid','Skipped','Used'};
-fields={'Finite','Converged','Stalled','MaxIterations','Failed','Skipped','Used'};
+widths=[.06 .14 .045 repmat(.094,1,8)]; edges=[0 cumsum(widths/sum(widths))];
+headers={'N','Method','Trials','Finite','Converged / passed','Stalled', ...
+    'Max iterations','HMC warning','Failed / invalid','Skipped','Used'};
+fields={'Finite','Converged','Stalled','MaxIterations','SamplingWarning','Failed','Skipped','Used'};
 rectangle(ax,'Position',[0 n 1 header_height],'FaceColor',[.89 .92 .96],'EdgeColor','none');
 for i=1:n
     y=n-i;
     if mod(floor((i-1)/methods_per_length),2)==0
         rectangle(ax,'Position',[0 y 1 1],'FaceColor',[.96 .97 .98],'EdgeColor','none');
     end
-    for k=1:10
+    for k=1:numel(headers)
         align='center'; color=[.1 .1 .1]; weight='normal';
         if k==1, value=sprintf('%d',rows.N(i));
         elseif k==2, value=char(string(rows.Method(i))); align='left';
@@ -244,7 +267,7 @@ for i=1:n
             'Interpreter','latex','FontSize',8.5,'Color',color,'FontWeight',weight);
     end
 end
-for k=1:10
+for k=1:numel(headers)
     text(ax,(edges(k)+edges(k+1))/2,n+header_height/2,headers{k}, ...
         'HorizontalAlignment','center','VerticalAlignment','middle', ...
         'Interpreter','latex','FontSize',8.5,'FontWeight','bold');
@@ -258,8 +281,8 @@ for y=[0:n n+header_height]
     plot(ax,[0 1],[y y],'-','Color',[.65 .65 .65],'LineWidth',width);
 end
 annotation(fig,'textbox',[.02 .005 .96 .075],'String',{ ...
-    'Finite includes converged, stalled, and iteration-limited estimates. Used is the population included in bias/RMSE summaries.', ...
-    'Failed includes invalid updates (red); skipped methods are separate. n/a means the saved file lacks that status breakdown.'}, ...
+    'Finite includes valid optimizer estimates and finite HMC posterior estimates, including sampler warnings. Used is the bias/RMSE population.', ...
+    'Converged / passed means optimizer convergence or HMC diagnostics passed. HMC warnings are separate; failed/invalid is red; skipped is separate.'}, ...
     'Interpreter','latex','FontSize',8.5,'EdgeColor','none');
 end
 

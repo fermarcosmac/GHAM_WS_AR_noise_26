@@ -15,15 +15,22 @@ values=reshape(double(s.final_param_estimates),[L M R P]);
 states=reshape(string(s.statuses),[L M R]);
 population=char(s.summary_population);
 assert(ismember(population,{'finite','converged'}),'Unknown summary population.');
+runtime=NaN(L,M,R);
+for field={'total_wall_time','total_wall_time_runs','total_time_runs'}
+    if isfield(s,field{1}) && ~isempty(s.(field{1}))
+        runtime=reshape(double(s.(field{1})),[L M R]); break;
+    end
+end
 means=NaN(L,M,P); param_se=means;
 error_mean=NaN(L,M); error_se=error_mean; used=zeros(L,M);
-rows=cell(L*M,16); row=0;
+rows=cell(L*M,21); row=0;
 for j=1:L
     for m=1:M
         trials=reshape(values(j,m,:,:),[R P]);
         status=reshape(states(j,m,:),[R 1]);
-        keep=all(isfinite(trials),2) & ismember(status,["converged","stalled","max_iterations","ok"]);
-        if strcmp(population,'converged'), keep=keep & status=="converged"; end
+        keep=all(isfinite(trials),2) & ismember(status,["converged","stalled","max_iterations", ...
+            "ok","sampling_complete","sampling_warning"]);
+        if strcmp(population,'converged'), keep=keep & ismember(status,["converged","sampling_complete"]); end
         used(j,m)=sum(keep);
         if any(keep)
             errors=100*vecnorm(trials(keep,:)-truth.',2,2)/norm(truth);
@@ -34,22 +41,31 @@ for j=1:L
                 param_se(j,m,:)=reshape(std(trials(keep,:),0,1)/sqrt(used(j,m)),[1 1 P]);
             end
         end
-        failed=sum(~ismember(status,["converged","stalled","max_iterations","ok","skipped"]));
+        failed=sum(~ismember(status,["converged","stalled","max_iterations","ok", ...
+            "sampling_complete","sampling_warning","skipped"]));
+        times=reshape(runtime(j,m,:),[R 1]); times=times(isfinite(times) & times>=0);
+        mean_time=NaN; std_time=NaN;
+        if ~isempty(times), mean_time=mean(times); end
+        if numel(times)>1, std_time=std(times); end
         row=row+1;
         rows(row,:)={backend,levels(j),levels(j)^2,names{m},R,used(j,m), ...
             error_mean(j,m),error_se(j,m),error_mean(j,m)-1.96*error_se(j,m), ...
             error_mean(j,m)+1.96*error_se(j,m),sum(status=="converged"), ...
-            sum(status=="stalled"),sum(status=="max_iterations"),failed,sum(status=="skipped"),population};
+            sum(status=="stalled"),sum(status=="max_iterations"),failed,sum(status=="skipped"),population, ...
+            sum(status=="sampling_complete"),sum(status=="sampling_warning"), ...
+            mean_time,std_time,numel(times)};
     end
 end
 report=cell2table(rows,'VariableNames',{'Parametrization','SigmaNu','InnovationVariance', ...
     'Method','Trials','Used','MeanRelativeErrorPct','MCSE','CILow','CIHigh', ...
-    'Converged','Stalled','MaxIterations','Failed','Skipped','SummaryPopulation'});
+    'Converged','Stalled','MaxIterations','Failed','Skipped','SummaryPopulation', ...
+    'SamplerDiagnosticsPassed','SamplingWarning','MeanTotalWallTimeSec', ...
+    'StdTotalWallTimeSec','TimingAttempts'});
 figures=gobjects(1,2);
 if R==1
     error_label='Relative parameter error (%)';
     estimate_label='Final estimate';
-    note='One run per optimizer and noise level; no Monte Carlo intervals.';
+    note='One run per method and noise level; no Monte Carlo intervals.';
 else
     error_label='Mean relative parameter error (%)';
     estimate_label='Mean final estimate';

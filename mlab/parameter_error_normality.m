@@ -24,7 +24,14 @@ if isfield(dataset.mc_summary,'statuses')
     if size(states,1)~=M, states=states.'; end
     assert(isequal(size(states),size(errors)),'Statuses and errors must align.');
 end
-valid=isfinite(errors) & ismember(states,["ok","converged","stalled","max_iterations","unrecorded"]);
+valid=isfinite(errors) & ismember(states,["ok","converged","stalled","max_iterations", ...
+    "sampling_complete","sampling_warning","unrecorded"]);
+if isfield(dataset.mc_summary,'point_estimate_valid')
+    recorded_valid=logical(dataset.mc_summary.point_estimate_valid);
+    if size(recorded_valid,1)~=M, recorded_valid=recorded_valid.'; end
+    assert(isequal(size(recorded_valid),size(valid)),'Point-estimate validity and errors must align.');
+    valid=valid & recorded_valid;
+end
 samples=cell(M,1); sample_mean=NaN(M,1); sample_std=NaN(M,1);
 for m=1:M
     samples{m}=errors(m,valid(m,:));

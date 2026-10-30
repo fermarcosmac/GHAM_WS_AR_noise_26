@@ -26,7 +26,13 @@ if isfield(summary,'statuses')
     states = orient(string(summary.statuses),M);
     assert(isequal(size(states),size(errors)),'Statuses and errors must align.');
 end
-valid = isfinite(errors) & ismember(states,["ok","converged","stalled","max_iterations","unrecorded"]);
+valid = isfinite(errors) & ismember(states,["ok","converged","stalled","max_iterations", ...
+    "sampling_complete","sampling_warning","unrecorded"]);
+if isfield(summary,'point_estimate_valid')
+    recorded_valid=orient(logical(summary.point_estimate_valid),M);
+    assert(isequal(size(recorded_valid),size(valid)),'Point-estimate validity and errors must align.');
+    valid=valid & recorded_valid;
+end
 skipped = all(states=="skipped",2);
 % Legacy Monte Carlo payloads record statuses only for their first run.
 if ~isfield(summary,'statuses') && isfield(dataset,'results')

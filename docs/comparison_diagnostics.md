@@ -108,7 +108,35 @@ the first realization for compatibility. Each method result adds:
 - `total_wall_time`, `diagnostic_time`, and `total_time` (wall time minus the
   diagnostic extraction/export-to-memory interval). `total_time` includes
   objective/metric evaluation and stopping checks; it is not pure solver time.
-  File writing, configuration resolution, and initialization are outside it.
+  Python timing now includes per-fit configuration and initialization; file
+  writing and plotting remain outside it. Legacy MATLAB optimizer timing
+  retains its existing initialization convention. Cross-method final-score
+  tables prefer `total_wall_time`, including diagnostics, over `total_time`.
+
+### Bayesian final-only results
+
+Python `BI_HMC` uses a separate sampler loop with `method_kind="bayesian"` and
+`point_estimate="posterior_mean"`. Its optimizer histories are empty; iteration
+summaries are NaN and HMC draws are never counted as optimizer updates. The
+same original-coefficient `theta_hat`, terminal errors, and output RMSE enter
+final comparison tables, boxplots and paired hypothesis tests. Posterior draws,
+innovation-variance draws, sampler diagnostics and transition counts are saved
+separately. Mixed MATLAB structs preserve the union of result fields, in any
+method order.
+
+`sampling_complete` records passing sampler diagnostics; `sampling_warning`
+records unresolved diagnostics with finite draws. Only a valid physical point
+estimate can enter finite-error summaries. A warning may be included in the
+finite cohort, like a stalled/budget-limited optimizer, but is excluded from
+the passed/converged cohort. Posterior distributions use their own plots and
+are excluded from optimizer trajectories and Hessian figures.
+
+`total_wall_time` includes the complete inference setup, initialization,
+warm-up, retained sampling and diagnostics, plus terminal assessment in the
+shared wrapper. `mc_summary.total_wall_time_runs` and
+`mc_summary.final_output_rmse_runs` support comparisons without creating
+Bayesian iteration curves. See [the implementation guide](bayesian_hmc_implementation.md)
+for boundaries, physical priors, the exact-IIR forward model and configuration.
 
 Data hashes use concatenated `r` and measured `c` as little-endian float64 bytes.
 Equal seeds across MATLAB and Python do **not** imply equal generated data.

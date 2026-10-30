@@ -17,7 +17,7 @@ for j = 1:numel(runs)
     runs{j} = results;
     for m = 1:numel(results)
         r = results(m);
-        if ~isfield(r,'diagnostics'), continue; end
+        if is_bayesian_result(r) || ~isfield(r,'diagnostics'), continue; end
         names = union(names,{char(r.name)},'stable');
         s = summarize_optimization_diagnostics(r.diagnostics);
         entry = struct('method',string(r.name),'run',j,'status',string(r.status), ...
@@ -67,7 +67,8 @@ for m = 1:numel(names)
     selected = {};
     for j = 1:numel(runs)
         idx = find(strcmp({runs{j}.name},names{m}),1);
-        if ~isempty(idx) && ~strcmp(runs{j}(idx).status,'skipped') && isfield(runs{j}(idx),'diagnostics')
+        if ~isempty(idx) && ~is_bayesian_result(runs{j}(idx)) && ...
+                ~strcmp(runs{j}(idx).status,'skipped') && isfield(runs{j}(idx),'diagnostics')
             selected{end+1} = runs{j}(idx); %#ok<AGROW>
         end
     end
