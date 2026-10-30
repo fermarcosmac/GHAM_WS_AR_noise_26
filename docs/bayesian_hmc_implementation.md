@@ -153,6 +153,13 @@ learned sparse precisions. The variance prior is fixed across noise-intensity
 conditions. Reconsider its scale for different units or independently measured
 noise ranges; do not set it from hidden simulation truth.
 
+The innovation-variance prior now uses inverse-gamma shape `3` and scale
+`0.002`. Its mean is `scale/(shape-1) = 0.001`, ten times smaller than the
+benchmark innovation variance `0.1^2 = 0.01`. Its standard deviation is also
+`0.001`. This replaces the earlier scale `0.02`, whose prior mean happened to
+equal the benchmark truth. The prior remains fixed across datasets and noise
+levels; experiment settings do not determine its parameters.
+
 `K_max`, optimization stopping tolerances, Hessian regularization, and fixed
 optimizer-history padding do not govern BI_HMC sampling.
 
@@ -264,6 +271,11 @@ validate wiring, not MCMC convergence, finite-sample unbiasedness or interval
 coverage. Longer runs must still be diagnosed using their saved results.
 
 ### Validated example, 30 October 2026
+
+This recorded run predates the prior adjustment above: it used inverse-gamma
+shape `3`, scale `0.02` (prior mean `0.01`). The saved MAT/JSON configuration
+preserves those original settings. Its numerical results are not a rerun with
+the current, smaller prior mean.
 
 The following command ran the configured 10,000-observation `example_CSTR`
 benchmark with four chains, 500 warm-up transitions and 1,000 retained draws

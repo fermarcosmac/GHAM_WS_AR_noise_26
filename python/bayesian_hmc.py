@@ -117,7 +117,7 @@ DEFAULT_HMC_CONFIG = {
     "step_size": 0.01, "target_accept": 0.8, "adapt_step_size": True,
     "adapt_mass": True, "mass_window": 50, "initial_jitter": 0.1,
     "initial_optimization_steps": 30, "initial_variance": 0.01,
-    "variance_prior_shape": 3.0, "variance_prior_scale": 0.02,
+    "variance_prior_shape": 3.0, "variance_prior_scale": 0.002,
     "coefficient_prior_mean": 0.0, "coefficient_prior_std": 1.0,
     "seed": 20261030, "progress_every": 100, "divergence_threshold": 1000.0,
     "max_rhat": 1.01, "min_ess": 100.0, "noise_initialization": "stationary",
@@ -308,9 +308,10 @@ class BayesianWienerARModel:
 
 
 def _value_gradient(model, position):
+    # get model output and gradient at given candidate parameters (position in phase space, HMC interpretation)
     variable = position.detach().requires_grad_(True)
     try:
-        value = model.log_prob(variable)
+        value = model.log_prob(variable) # here is where the main logic happens!
         if not torch.isfinite(value):
             return float("-inf"), torch.zeros_like(position)
         gradient, = torch.autograd.grad(value, variable)
@@ -484,13 +485,105 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
                verbose: bool = False) -> dict[str, Any]:
     """Run independent HMC chains and return their physical posterior mean.
 
-    Explicit ``noise_burn_in`` means the AR process started at zero that many
-    samples before the retained record. Only its *length* is used; hidden
-    innovations and hidden noise values are never accepted. ``input_history``
-    is the observed input prefix preceding ``r``, propagated from a known zero
-    signal state. Without it the fit explicitly assumes zero signal state at
-    the start of ``r``. Neither approximation is hidden in the result metadata.
+    Parameters
+    ----------
+    r : torch.Tensor, shape (N,)
+        Known external input/excitation over the retained observation record:
+        this is u_t in the manuscript, NOT an output residual or innovation.
+        Sample r[t] is aligned with observed output c[t]. Earlier observed
+        input samples, if available, belong in ``input_history`` instead.
+    c : torch.Tensor, shape (N,)
+        Measured noisy output: c_t = beta_t(theta) + e_t. Must have the same
+        length as r. Both records must be finite; inference copies them to
+        CPU float64 and does not modify the supplied tensors.
+    dims : WienerDimensions
+        Model orders na, nb, nf, nd. There are P = na + nb + (nf - 1) + nd
+        free physical coefficients, ordered as (a1,...,a_na, b1,...,b_nb,
+        f2,...,f_nf, d1,...,d_nd); f1 is fixed to one. The innovation variance
+        is a separate additional unknown. Orders are not inferred here.
+    method_cfg : dict or None
+        Sampler/prior settings merged with DEFAULT_HMC_CONFIG. In particular,
+        chains=C, warmup=W, samples=S, and leapfrog_steps control the sampling
+        budget; Gaussian coefficient and inverse-gamma variance prior settings
+        define the physical prior. Optimizer K_max is not used.
+    initial_theta : array-like of shape (P,), optional, keyword-only
+        Starting PHYSICAL coefficient vector in the order above. Denominators
+        must be strictly stable. If omitted, use zero coefficients except
+        b1=1. Each chain jitters the corresponding unconstrained coordinates
+        and may run the configured initialization optimization. The starting
+        variance comes from method_cfg['initial_variance'].
+    input_history : array-like of shape (H,), optional, keyword-only
+        Observed input samples immediately preceding r, in chronological
+        order. Each candidate signal filter is replayed over history followed
+        by r, starting from a known zero signal state before the history.
+        Without history, the assumed signal state is zero at r's first sample.
+        No true internal signal state is supplied.
+    noise_burn_in : nonnegative int or None, optional, keyword-only
+        Number of discarded noise samples between a known zero AR-noise start
+        and c's first retained sample. If supplied, overrides the configured
+        noise policy with the exact finite-burn-in initial covariance. Only
+        the count is used, never the discarded innovations or noise values.
+        If None, use the configured noise_initialization policy.
+    seed : int or None, optional, keyword-only
+        Override the configured base sampler seed. Each chain derives its own
+        local generator from this seed; the global PyTorch RNG is unchanged.
+    progress_callback : callable(dict) or None, optional, keyword-only
+        Receives sampling heartbeats containing phase, sampling_phase
+        ('warmup' or 'sampling'), chain, transition, max_transitions,
+        chain_transition, step_size, acceptance_probability, elapsed_seconds.
+        Chain numbers and transition counts are one-based/completed counts.
+    verbose : bool, optional, keyword-only
+        Print heartbeats when no progress_callback is supplied.
+
+    Returns
+    -------
+    dict
+        All draws below exclude warm-up. C denotes chains, S retained draws
+        per chain, and P the physical coefficient count.
+
+        theta_hat : torch.Tensor, shape (P,)
+            Mean of the physical coefficient draws, returned on r's original
+            device/dtype. It is NOT the transformed mean of sampling positions.
+        posterior_samples : CPU float64 tensor, shape (C, S, P)
+            Retained original-coefficient draws, preserving chain identity.
+        variance_samples : CPU float64 tensor, shape (C, S)
+            Retained innovation VARIANCE draws (sigma_nu squared, not its SD).
+        variance_hat : float
+            Mean of variance_samples.
+        posterior_interval : CPU float64 tensor, shape (2, P)
+            Physical marginal 2.5% and 97.5% posterior quantiles.
+        posterior_log_density : CPU float64 tensor, shape (C, S)
+            Physical-coordinate log posterior at each draw, up to a constant;
+            the sampling-coordinate Jacobian has been removed here.
+        sampling_positions : CPU float64 tensor, shape (C, S, P + 1)
+            Retained unconstrained coordinates (z_a, b, f, z_d, log variance).
+            These are sampler draws, not optimizer parameter trajectories.
+        final_alpha, final_beta : tensors, shape (N,)
+            Internal signal and noise-free output evaluated at theta_hat,
+            including input history; returned on r's original device/dtype.
+        status, diagnostics_passed, point_estimate_valid : str, bool, bool
+            Status is 'sampling_complete', 'sampling_warning', or 'failed'.
+            Diagnostic checks and a finite/stable physical mean determine the
+            flags; a finite posterior does not automatically pass diagnostics.
+        sampler_diagnostics : dict
+            Rhat, ESS, MCSE, acceptance/divergence information, per-chain
+            adapted settings/seeds, warnings, and evaluation counts.
+        resolved_config, sampler_seed, point_estimator : dict, int, str
+            Actual settings/base seed and the label 'posterior_mean'.
+        sampling_transitions, retained_draws : int, int
+            Total counts C*(W+S) and C*S, respectively.
+        forward_model, noise_initialization, noise_burn_in,
+        input_history_length, signal_initialization
+            Explicit model and beginning-of-record conventions used in the fit.
+        total_time : float
+            Elapsed seconds including model setup, initialization optimization,
+            warm-up, sampling and posterior diagnostics. The public run_bi_hmc
+            wrapper additionally includes thread-setting setup/restoration.
+
+    True parameters and true innovations are deliberately not inference inputs;
+    the comparison wrapper uses them only afterwards to assess the estimate.
     """
+    # Initialization and configuration
     started = time.perf_counter()
     cfg = resolve_hmc_config(method_cfg)
     if seed is not None:
@@ -518,10 +611,11 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
     completed = 0
     maximum = count*(warmup+retained)
 
+    # Main loop (one per sampling Markov Chain)
     for chain in range(count):
         generator = torch.Generator(device="cpu")
         generator.manual_seed((cfg["seed"] + chain*1000003) % (2**63-1))
-        position = center+float(cfg["initial_jitter"])*torch.randn(center.shape, generator=generator, dtype=center.dtype)
+        position = center+float(cfg["initial_jitter"])*torch.randn(center.shape, generator=generator, dtype=center.dtype) # slightly different starting point for each chain
         position, map_info = _map_initialize(model, position, cfg["initial_optimization_steps"])
         value, gradient = _value_gradient(model, position)
         if not math.isfinite(value):

@@ -22,7 +22,7 @@
       "coefficient_prior_std": 1.0,
       "prior_d_std": 0.5,
       "variance_prior_shape": 3.0,
-      "variance_prior_scale": 0.02,
+      "variance_prior_scale": 0.002,
       "noise_initialization": "stationary",
       "seed": 20261030,
       "progress_every": 100,
