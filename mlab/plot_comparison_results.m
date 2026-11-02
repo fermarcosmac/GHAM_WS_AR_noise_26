@@ -4,7 +4,7 @@ function datasets = plot_comparison_results(options)
 % Default selection includes available initialization files for the experiment.
 % Use include_initialization=false for comparisons only, or
 % study='initialization' for final-estimate boxplots and conditioning figures.
-% Paired win tests run for MONTECARLO and INITIALIZATION datasets. Use
+% Win tests run for MONTECARLO and INITIALIZATION datasets. Use
 % statistics_only=true to export statistical comparisons and MC normality;
 % win_test.enabled=false disables win comparisons. win_test also accepts
 % alpha, tie_ulps, absolute_tie_tolerance,
@@ -12,6 +12,8 @@ function datasets = plot_comparison_results(options)
 % MC histograms include Shapiro-Wilk tests (Python/SciPy backend for R2026a).
 % normality.enabled=false disables them; normality.python_executable selects
 % the Python executable. Other normality options: alpha, expected_runs.
+% PL reports reuse saved BI_HMC from the matching Python/FSM file by default.
+% include_bi_hmc=false disables this; bi_hmc_source selects a custom source.
 
 if nargin < 1, options = struct(); end
 
@@ -75,13 +77,16 @@ for i = 1:numel(data_files)
         continue;
     end
     loaded = load(data_files{i});
+    loaded = include_shared_bi_hmc(loaded,data_files{i},options);
+    study_options=options;
+    study_options.fig_dir=fig_dir; study_options.export_figures=export_figures;
     if isfield(loaded,'study') && strcmp(char_value(loaded.study.type),'record_length')
-        plot_record_length_study(loaded,struct('fig_dir',fig_dir,'export_figures',export_figures));
+        plot_record_length_study(loaded,study_options);
         study_plots_loaded = true;
         continue;
     end
     if isfield(loaded,'study') && strcmp(char_value(loaded.study.type),'noise')
-        plot_noise_study(loaded,struct('fig_dir',fig_dir,'export_figures',export_figures));
+        plot_noise_study(loaded,study_options);
         study_plots_loaded = true;
         continue;
     end
@@ -190,6 +195,8 @@ ds.parametrization = char_value(loaded.parametrization);
 ds.generated_at = char_value(loaded.generated_at);
 ds.experiment = loaded.experiment;
 ds.study = struct();
+ds.shared_bi_hmc = struct();
+if isfield(loaded,'shared_bi_hmc'), ds.shared_bi_hmc=loaded.shared_bi_hmc; end
 ds.win_comparisons = table();
 ds.win_metadata = struct();
 ds.normality_tests = table();
@@ -940,6 +947,7 @@ nf = scalar_value(dims.nf);
 nd = scalar_value(dims.nd);
 
 estimate_signals = {};
+measured_signals = {};
 estimate_labels = {};
 estimate_colors = [];
 for m = 1:numel(dataset.results)
@@ -954,13 +962,28 @@ for m = 1:numel(dataset.results)
         continue;
     end
 
-    c_est = simulate_wiener(r, nu, double(result.theta_hat(:)), na, nb, nf, nd, numel(c));
+    measured=c;
+    label=display_method_label(method, dataset.parametrization);
+    if isfield(result,'presentation_example_data') && ~isempty(result.presentation_example_data)
+        saved=result.presentation_example_data;
+        measured=double(saved.c(:));
+        if isfield(result,'output_estimate') && ~isempty(result.output_estimate)
+            c_est=double(result.output_estimate(:));
+        else
+            c_est=simulate_wiener(double(saved.r(:)),double(saved.nu(:)), ...
+                double(result.theta_hat(:)),na,nb,nf,nd,numel(measured));
+        end
+        label=[label ' (Python record)'];
+    else
+        c_est = simulate_wiener(r, nu, double(result.theta_hat(:)), na, nb, nf, nd, numel(c));
+    end
     if isempty(c_est) || ~any(isfinite(c_est))
         continue;
     end
 
     estimate_signals{end + 1} = c_est(1:n_samples); %#ok<AGROW>
-    estimate_labels{end + 1} = display_method_label(method, dataset.parametrization); %#ok<AGROW>
+    measured_signals{end + 1} = measured(1:n_samples); %#ok<AGROW>
+    estimate_labels{end + 1} = label; %#ok<AGROW>
     estimate_colors(end + 1, :) = colors(color_idx, :); %#ok<AGROW>
 end
 
@@ -987,7 +1010,7 @@ for idx = 1:n_estimates
     ax = nexttile(tl);
     axes_list(idx) = ax;
     hold(ax, 'on');
-    plot(ax, x, c(1:n_samples), 'Color', measured_color, ...
+    plot(ax, x, measured_signals{idx}, 'Color', measured_color, ...
         'LineWidth', 1.1, 'DisplayName', 'Measured output');
     plot(ax, x, estimate_signals{idx}, '.', ...
         'Color', estimate_colors(idx, :), ...
@@ -997,7 +1020,7 @@ for idx = 1:n_estimates
     grid(ax, 'on');
     box(ax, 'on');
     xlim(ax, [1 n_samples]);
-    minmax = [min(c(1:n_samples)), max(c(1:n_samples))];
+    minmax = [min(measured_signals{idx}), max(measured_signals{idx})];
     margin = max(1e-3,0.1*max(abs(minmax)));
     ylim(ax, [minmax(1)-margin, minmax(2)+margin])
     ylabel(ax, '$c(t)$');
@@ -1019,7 +1042,7 @@ fig_error = figure('Name', sprintf('%s Output Errors', parametrization), ...
 ax_error = axes(fig_error);
 hold(ax_error, 'on');
 for idx = 1:n_estimates
-    squared_error = (c(1:n_samples) - estimate_signals{idx}).^2;
+    squared_error = (measured_signals{idx} - estimate_signals{idx}).^2;
     squared_error(squared_error == 0) = NaN; % Zero has no position on a log axis.
     plot(ax_error, x, squared_error, ...
         'Color', estimate_colors(idx, :), ...

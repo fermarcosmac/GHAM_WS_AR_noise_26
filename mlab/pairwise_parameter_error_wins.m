@@ -3,6 +3,7 @@ function [pairs, trials, info] = pairwise_parameter_error_wins(dataset, options)
 % One family = one study, benchmark, and parametrization. No outlier filtering.
 % Win probabilities and their exact 95% CIs condition on valid, non-tied pairs;
 % the CIs are descriptive (unadjusted), while decisions use Holm-adjusted p.
+% Reused Python references on different records use independent rank-sum tests.
 if nargin < 2, options = struct(); end
 alpha = opt(options,'alpha',0.05);
 tie_ulps = opt(options,'tie_ulps',10);
@@ -50,7 +51,10 @@ if isfield(dataset,'study') && isfield(dataset.study,'type'), study = lower(stri
 assert(ismember(study,["montecarlo","initialization"]),'Unsupported study for win comparisons.');
 benchmark = string(dataset.experiment.name);
 parametrization = string(dataset.parametrization);
-pairing = check_pairing(dataset,names,R,study);
+shared=false(M,1);
+if isfield(summary,'shared_reference_methods'), shared=logical(summary.shared_reference_methods(:)); end
+assert(numel(shared)==M,'Shared-reference flags must match methods.');
+pairing = check_pairing(dataset,names(~shared),R,study);
 labels = names;
 if isfield(options,'method_labels')
     labels = string(options.method_labels(:));
@@ -87,7 +91,36 @@ for ia = 1:numel(active)
             'WinProbabilityA',probability,'CILower',ci(1),'CIUpper',ci(2), ...
             'MeanDifference',mean(d),'MedianDifference',median(d), ...
             'RawP',p,'AdjustedP',NaN,'Significant',false,'Winner',"", ...
-            'Conclusion',conclusion,'PairingCheck',pairing);
+            'Conclusion',conclusion,'PairingCheck',pairing,'Test',"paired_exact_sign", ...
+            'ValidA',sum(valid(a,:)),'ValidB',sum(valid(b,:)));
+        unpaired=shared(a) || shared(b);
+        if unpaired
+            % MATLAB/Python seeds do not imply identical measured records.
+            % Use all valid independent samples; never pair them by column.
+            x=errors(a,valid(a,:)); y=errors(b,valid(b,:));
+            entry.Test="independent_rank_sum";
+            entry.PairingCheck="separate_saved_python_records";
+            entry.ValidPairs=NaN; entry.AInvalidOnly=NaN;
+            entry.BInvalidOnly=NaN; entry.BothInvalid=NaN;
+            entry.RawP=NaN; entry.WinProbabilityA=NaN;
+            entry.CILower=NaN; entry.CIUpper=NaN;
+            entry.WinsA=0; entry.WinsB=0; entry.Ties=0; entry.Decisive=0;
+            entry.MeanDifference=mean(x)-mean(y);
+            entry.MedianDifference=median(x)-median(y);
+            entry.Conclusion="no valid samples";
+            if ~isempty(x) && ~isempty(y)
+                % Cross-sample wins are descriptive; their dependent counts
+                % must not enter binomial p-values or confidence intervals.
+                delta=x(:)-y(:).';
+                entry.WinsA=sum(delta<0,'all'); entry.WinsB=sum(delta>0,'all');
+                entry.Ties=sum(delta==0,'all');
+                entry.Decisive=entry.WinsA+entry.WinsB;
+                entry.WinProbabilityA=(entry.WinsA+.5*entry.Ties)/numel(delta);
+                if all(delta==0,'all'), entry.RawP=1;
+                else, entry.RawP=ranksum(x,y,'tail','both'); end
+                entry.Conclusion="inconclusive";
+            end
+        end
         if isempty(rows), rows = entry; else, rows(end+1) = entry; end %#ok<AGROW>
         outcomes = repmat("both_invalid",1,R);
         outcomes(~valid(a,:) & valid(b,:)) = "A_invalid";
@@ -96,10 +129,12 @@ for ia = 1:numel(active)
         joint_outcomes(d < -tolerance) = "A_win";
         joint_outcomes(d > tolerance) = "B_win";
         outcomes(joint) = joint_outcomes;
+        if unpaired, outcomes(:)="unpaired_sample_columns"; end
         for r = 1:R
             t = struct('Benchmark',benchmark,'Study',study,'Parametrization',parametrization, ...
                 'OptimizerA',names(a),'OptimizerB',names(b),'Run',r,'ErrorA',errors(a,r), ...
-                'ErrorB',errors(b,r),'StatusA',states(a,r),'StatusB',states(b,r),'Outcome',outcomes(r));
+                'ErrorB',errors(b,r),'StatusA',states(a,r),'StatusB',states(b,r),'Outcome',outcomes(r), ...
+                'Test',entry.Test);
             if isempty(trial_rows), trial_rows = t; else, trial_rows(end+1) = t; end %#ok<AGROW>
         end
     end
@@ -118,6 +153,9 @@ if ~isempty(pairs)
         if pairs.WinsA(k)>pairs.WinsB(k), pairs.Winner(k)=pairs.OptimizerA(k);  % store winner
         else, pairs.Winner(k)=pairs.OptimizerB(k); end
         pairs.Conclusion(k) = "significant win-frequency advantage";
+        if pairs.Test(k)=="independent_rank_sum"
+            pairs.Conclusion(k)="significant independent rank-sum difference";
+        end
     end
 end
 info = struct('Benchmark',benchmark,'Study',study,'Parametrization',parametrization, ...
@@ -125,9 +163,14 @@ info = struct('Benchmark',benchmark,'Study',study,'Parametrization',parametrizat
     'Alpha',alpha,'TieULPs',tie_ulps,'AbsoluteTieTolerance',absolute_tie_tolerance, ...
     'Runs',R,'MethodNames',names,'MethodLabels',labels,'FiniteCounts',sum(valid,2), ...
     'Skipped',skipped,'FamilySize',height(pairs),'PairingCheck',pairing, ...
-    'ConfidenceIntervals',"unadjusted exact binomial; conditional on valid non-tied pairs");
+    'ConfidenceIntervals',"unadjusted exact binomial for paired tests only; independent reference CIs omitted", ...
+    'SharedReferenceMethods',names(shared), ...
+    'Tests',"paired exact sign within original dataset; independent rank-sum against reused Python reference");
 if isfield(dataset,'file'), info.SourceFile = string(dataset.file); end
 if isfield(dataset,'generated_at'), info.SourceGeneratedAt = string(dataset.generated_at); end
+if isfield(dataset,'shared_bi_hmc') && isfield(dataset.shared_bi_hmc,'source_file')
+    info.SharedReferenceSource=string(dataset.shared_bi_hmc.source_file);
+end
 end
 
 function matrix = orient(matrix,M)
@@ -166,7 +209,8 @@ for r = 1:R
         if isfield(md,'mc_index'), assert(double(md.mc_index)==r,'Run index mismatch.'); end
         if isfield(md,'initialization_index'), assert(double(md.initialization_index)==r,'Initialization index mismatch.'); end
         if isfield(dataset.mc_summary,'run_ids') && isfield(md,'run_id')
-            assert(string(dataset.mc_summary.run_ids(m,r))==string(md.run_id),'Summary/history run ID mismatch.');
+            summary_index=find(string(dataset.mc_summary.method_names)==names(m),1);
+            assert(string(dataset.mc_summary.run_ids(summary_index,r))==string(md.run_id),'Summary/history run ID mismatch.');
         end
         if study=="initialization"
             if isfield(result,'theta0')

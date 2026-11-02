@@ -4,7 +4,9 @@ function [figures, report] = plot_record_length_aggregate_bias(payload, options)
 % is mean(norm(error)): an estimation-error magnitude, not statistical bias.
 % Uses the saved summary population without rerunning any identification.
 if nargin<2, options=struct(); end
-if ischar(payload) || isstring(payload), payload=load(payload); end
+source_file='';
+if ischar(payload) || isstring(payload), source_file=char(payload); payload=load(payload); end
+payload=include_shared_bi_hmc(payload,source_file,options);
 s=payload.study;
 names=cellstr(string(s.method_names));
 resolutions=cellstr(string(s.resolution_labels));

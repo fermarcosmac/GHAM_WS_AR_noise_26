@@ -1,0 +1,232 @@
+% Insert after the existing appendices; do not issue another \appendix.
+% Requires amsmath and amssymb. Add bi_hmc_references.bib to the bibliography.
+% Settings checked against the saved Python Monte Carlo/record-length results.
+% The conditional preamble supports the editor preview of this same file;
+% it is skipped when the appendix is included in an existing manuscript.
+\ifdefined\section
+  \let\BIHMCfinishstandalone\relax
+\else
+  \documentclass[11pt]{article}
+  \usepackage[a4paper,margin=25mm]{geometry}
+  \usepackage{amsmath,amssymb}
+  \def\BIHMCfinishstandalone{%
+    \bibliographystyle{plain}%
+    \bibliography{bi_hmc_references}%
+    \end{document}}
+  \begin{document}
+  \appendix
+\fi
+
+\section{Bayesian identification using Hamiltonian Monte Carlo}
+\label{app:bi_hmc}
+
+The Bayesian baseline, denoted BI-HMC, estimates the same physical
+coefficient vector $\theta\in\mathbb R^n$ as the other methods, together
+with the innovation variance $\sigma_\nu^2$. The model orders and the
+normalization $f_1=1$ are retained. Assuming
+$\nu(t)\overset{\mathrm{iid}}{\sim}\mathcal N(0,\sigma_\nu^2)$,
+independently of the input, Bayes' rule gives
+\begin{equation}
+\label{eq:bi_posterior}
+ p(\theta,\sigma_\nu^2\mid C,u)
+ \propto p(C\mid\theta,\sigma_\nu^2,u)\,
+          p(\theta)\,p(\sigma_\nu^2).
+\end{equation}
+The deterministic signal $\beta(t;\theta)$ is evaluated through the
+original IIR recursion and polynomial nonlinearity. Thus BI-HMC provides
+one common reference for the PL and FSM comparisons, without an FSM
+truncation in its likelihood.
+
+\paragraph{Likelihood.}
+Conditionally on the measured input $u$ and a candidate $\theta$, the
+signal $\beta(t;\theta)$ is deterministic. The only remaining randomness
+in $c(t)$ is the additive AR disturbance, which is a linear filtering of
+Gaussian innovations. In particular, let $B$ denote the number of burn-in
+samples and collect all innovations affecting the retained record in
+$V_B=[\nu(1-B),\ldots,\nu(\tau)]^\top$. With a zero noise state before
+these samples,
+\begin{equation}
+\label{eq:bi_gaussian_construction}
+ \begin{aligned}
+ V_B&\sim\mathcal N(0,\sigma_\nu^2 I_{\tau+B}),\\
+ C&=\boldsymbol\beta(\theta)+H_B(d)V_B,
+ \end{aligned}
+\end{equation}
+where $\boldsymbol\beta(\theta)=[\beta(1;\theta),\ldots,
+\beta(\tau;\theta)]^\top$ and $H_B(d)$ is the
+$\tau\times(\tau+B)$ convolution matrix of the candidate AR noise
+filter, restricted to the retained output samples. An affine
+transformation of a Gaussian vector is Gaussian; hence
+\begin{equation}
+\label{eq:bi_gaussian_data}
+ C\mid\theta,\sigma_\nu^2,u
+ \sim\mathcal N\!\left(\boldsymbol\beta(\theta),
+                      \sigma_\nu^2 R_d\right),
+ \qquad R_d=H_B(d)H_B(d)^\top.
+\end{equation}
+Thus the mean depends on the signal-path coefficients, while the
+covariance depends on the AR coefficients and innovation variance.
+The output samples are generally correlated. The nonlinear dependence
+of $\boldsymbol\beta$ on $\theta$ does not invalidate this
+\emph{conditional} Gaussian distribution or imply a Gaussian posterior.
+
+Define $e(t;\theta)=c(t)-\beta(t;\theta)$ and
+$E(\theta)=C-\boldsymbol\beta(\theta)$. Substitution into the
+multivariate Gaussian density gives the likelihood
+\begin{align}
+\label{eq:bi_likelihood}
+ p(C\mid\theta,\sigma_\nu^2,u)
+ &=\frac{\exp[-Q(\theta)/(2\sigma_\nu^2)]}
+ {(2\pi\sigma_\nu^2)^{\tau/2}|R_d|^{1/2}},\\
+\label{eq:bi_mahalanobis}
+ Q(\theta)&=E(\theta)^\top R_d^{-1}E(\theta).
+\end{align}
+Taking logarithms yields
+\begin{equation}
+\label{eq:bi_log_likelihood}
+ \begin{aligned}
+ \log p(C\mid\theta,\sigma_\nu^2,u)
+ &=-\frac{\tau}{2}\log(2\pi)
+   -\frac{\tau}{2}\log\sigma_\nu^2\\
+ &\quad-\frac12\log|R_d|
+   -\frac{Q(\theta)}{2\sigma_\nu^2}.
+ \end{aligned}
+\end{equation}
+Only the first term is constant with respect to all inference
+parameters; the covariance-determinant term must also be retained.
+
+The implementation avoids forming or inverting the full $R_d$.
+The AR recursion reconstructs
+\begin{equation}
+\label{eq:bi_residuals}
+ \hat\nu(t;\theta)=e(t;\theta)
+       +\sum_{i=1}^{n_d}d_i e(t-i;\theta),\qquad t>n_d.
+\end{equation}
+Let $m=\min(n_d,\tau)$, let $E_m(\theta)$ contain the first $m$
+residuals, and let $\Gamma_d$ be their model covariance divided by
+$\sigma_\nu^2$. The joint density factors into the initial residual
+density and the subsequent independent Gaussian innovation densities.
+Since the residual-to-innovation transformation is triangular with
+unit diagonal, this gives
+\begin{equation}
+\label{eq:bi_Q}
+ \begin{aligned}
+ Q(\theta)
+ &=E_m(\theta)^\top\Gamma_d^{-1}E_m(\theta)
+   +\sum_{t=m+1}^{\tau}\hat\nu(t;\theta)^2,\\
+ |R_d|&=|\Gamma_d|.
+ \end{aligned}
+\end{equation}
+In the simulations, the filters start from zero before the $100$
+discarded samples. The observed input prehistory is replayed for each
+candidate signal model, and $\Gamma_d$ is computed from the candidate
+AR filter's impulse response and this burn-in length. Unobserved noise
+prehistory is integrated out; neither true innovations nor true internal
+signals enter inference. This initial-density contribution distinguishes
+the exact likelihood from a conditional criterion that simply drops the
+first $n_d$ samples. For $n_d=0$, the initial quadratic term is zero,
+$R_d=I_\tau$, and $|\Gamma_d|=1$.
+
+\paragraph{Priors.}
+Zero-mean Gaussian prior kernels are assigned to the physical coefficients:
+$a_i,b_i,f_j\sim\mathcal N(0,1)$ for $j\geq2$, and
+$d_i\sim\mathcal N(0,0.5^2)$. Their product is restricted and normalized
+over the region where both recursive filters are strictly stable.
+Independently,
+\begin{equation}
+\label{eq:bi_variance_prior}
+ \sigma_\nu^2\sim\mathrm{IG}(3,0.002),\qquad
+ p(\sigma_\nu^2)\propto
+ (\sigma_\nu^2)^{-4}\exp\!\left(-\frac{0.002}{\sigma_\nu^2}\right).
+\end{equation}
+The prior mean is $0.001$, whereas the nominal benchmark innovation
+variance is $0.01$. These fixed priors are used across both benchmarks and record
+lengths; no sparsity hierarchy is introduced.
+
+\paragraph{Smooth sampling coordinates.}
+Stability is enforced through reflection coefficients
+\cite{Monahan1984}. For either denominator order $p\in\{n_a,n_d\}$,
+introduce unrestricted coordinates $r_j$ and set $\kappa_j=\tanh r_j$.
+Starting with an empty coefficient vector, the step-up recursion is
+\begin{equation}
+\label{eq:bi_schur}
+ v_j^{(j)}=\kappa_j,\qquad
+ v_i^{(j)}=v_i^{(j-1)}+\kappa_j v_{j-i}^{(j-1)},
+ \quad i=1,\ldots,j-1,
+\end{equation}
+for $j=1,\ldots,p$. The final coefficients $v_i^{(p)}$ give $a_i$
+or $d_i$, respectively. The coefficients $b_i,f_j$ remain unchanged,
+and $\sigma_\nu^2=\exp(s)$ with $s\in\mathbb R$.
+Writing this transformation as
+$T(\vartheta)=(\theta,\sigma_\nu^2)$, the sampling log density is
+\begin{equation}
+\label{eq:bi_sampling_density}
+ \log\pi(\vartheta)
+ =\log p\!\left(T(\vartheta)\mid C,u\right)
+   +\log|\det DT(\vartheta)|.
+\end{equation}
+The Jacobian includes both reflection-coefficient maps and the variance
+factor $\exp(s)$. It preserves the stated physical priors under the
+change of coordinates.
+
+\paragraph{Sampling and reported estimate.}
+Hamiltonian Monte Carlo (HMC) \cite{Neal2011} constructs Markov chains
+whose target density is $\pi(\vartheta)$ in
+\eqref{eq:bi_sampling_density}. At each transition, an auxiliary Gaussian
+momentum is drawn and the negative log density is treated as a potential
+energy. A leapfrog integrator uses its gradient to propose a joint move
+of all $n+1$ unknowns through the parameter space. A Metropolis
+acceptance step corrects the numerical integration error; on rejection,
+the chain remains at its previous state. Repeating these transitions
+produces correlated draws representing the posterior distribution,
+subject to adequate exploration of its relevant regions.
+
+Four chains are initialized at perturbed versions of the transformed
+study starting point, with initial variance $0.01$ and coordinate
+perturbation standard deviation $0.1$. A preliminary posterior
+maximization, limited to $30$ L-BFGS iterations, provides starting states
+for sampling. Each chain then undergoes $500$ warm-up transitions.
+This phase allows movement away from the initialization and tunes the
+sampler to the posterior scales: the step size is adapted by dual
+averaging towards acceptance $0.8$ \cite{HoffmanGelman2014}, while a
+diagonal mass matrix adjusts the relative movement of the coordinates.
+The initial step-size search starts at $0.01$, and each trajectory uses
+a uniformly selected number of leapfrog steps from $\{5,\ldots,10\}$.
+Warm-up draws are discarded. After warm-up, the step size and mass
+matrix are fixed and $1000$ further draws are retained from each chain,
+including repeated states after rejection.
+
+The resulting $4000$ draws are assessed using agreement between chains
+and effective sample sizes, which account for their serial dependence.
+The configured thresholds are rank-normalized/folded split
+$\widehat R\leq1.01$ and bulk and tail effective sample sizes of at
+least $400$ for every coefficient and the innovation variance
+\cite{VehtariEtAl2021}. Acceptance probabilities and divergent
+transitions are also monitored. Diagnostic warnings are reported
+separately; the default finite-output summaries retain finite, stable
+point estimates even when these diagnostics raise a warning.
+
+Finally, each retained draw is transformed to the physical coefficients
+and variance. Denoting these draws from chain $j$ by
+$\theta^{(j,\ell)}$ and $(\sigma_\nu^2)^{(j,\ell)}$, the reported
+estimates approximate the posterior expectations:
+\begin{equation}
+\label{eq:bi_posterior_means}
+ \begin{aligned}
+ \hat\theta_{\mathrm{BI\text{-}HMC}}
+ &=\frac{1}{4000}\sum_{j=1}^{4}\sum_{\ell=1}^{1000}
+      \theta^{(j,\ell)},\\
+ \widehat{\sigma_\nu^2}
+ &=\frac{1}{4000}\sum_{j=1}^{4}\sum_{\ell=1}^{1000}
+      (\sigma_\nu^2)^{(j,\ell)}.
+ \end{aligned}
+\end{equation}
+Thus each identification record yields one final coefficient estimate
+for computing parameter errors and output reconstructions. Averaging
+is performed in physical coordinates, after the nonlinear transformation.
+Total wall-clock time includes initialization, warm-up, retained
+sampling, diagnostics, and assessment; sampling transitions are not
+equated with optimizer iterations. The same saved Bayesian reference
+is included in both parametrization reports rather than being fitted
+again for PL.
+\BIHMCfinishstandalone

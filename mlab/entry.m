@@ -42,7 +42,7 @@ python_executable = 'python'; % Or the full path to your Python environment.
 
 %% PL initialization sensitivity: fixed data, random starts, all optimizers
 % Uses initialization_study in configs/studies.json; progress is on by default.
-% payload = initialization_study(experiment_name);
+payload = initialization_study(experiment_name);
 
 %% PL initialization sensitivity: override trial count/budget and save locally
 % options = struct('experiment_cfg',base_cfg, ...

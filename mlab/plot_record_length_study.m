@@ -4,7 +4,9 @@ function [figures, outcome_report, aggregate_report] = plot_record_length_study(
 % Aggregate figures are appended after the existing three figures per resolution.
 % include_aggregate, export_outcomes, and export_statistics default to true.
 if nargin<2, options=struct(); end
-if ischar(payload) || isstring(payload), payload=load(payload); end
+source_file='';
+if ischar(payload) || isstring(payload), source_file=char(payload); payload=load(payload); end
+payload=include_shared_bi_hmc(payload,source_file,options);
 s = payload.study; backend=char(payload.parametrization);
 names=cellstr(string(s.method_names)); labels=cellstr(string(s.param_labels));
 resolutions=cellstr(string(s.resolution_labels)); lengths=double(s.record_lengths(:).');

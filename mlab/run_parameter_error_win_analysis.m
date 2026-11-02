@@ -1,5 +1,6 @@
 function datasets = run_parameter_error_win_analysis(options)
-% Regenerate both studies' exact paired tests for both benchmark systems.
+% Regenerate saved-result comparisons for both studies and benchmark systems.
+% Copied Python references use independent tests; original pairs use sign tests.
 % run_parameter_error_win_analysis(struct('fig_dir',custom_dir))
 if nargin<1, options=struct(); end
 experiments={'example_1','example_CSTR'};

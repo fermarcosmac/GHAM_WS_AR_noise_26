@@ -170,6 +170,37 @@ The aggregate's `posterior_storage` describes this policy. Repeated-data bias
 intervals still describe uncertainty of the mean estimator error across trials;
 they are not the credible intervals within one fitted posterior.
 
+### Reuse the Python Bayesian reference in PL reports
+
+The MATLAB study plotters automatically include saved Python `BI_HMC` results
+in the matching PL presentation. Run the existing plotting calls again; no study
+or sampler must be rerun. For example:
+
+```matlab
+plot_comparison_results(struct('study','record_length','experiment_name','example_1'));
+```
+
+The helper `include_shared_bi_hmc` loads the sibling Python/FSM MAT file and
+adds/replaces only the BI_HMC method in memory. Existing PL optimizer estimates
+are preserved. Length/noise grid points and data-seed repetitions are aligned;
+incompatible benchmarks, parameter definitions or available grid points are
+rejected. Bias, MCSE, RMSE and outcome counts for the copied method use the PL
+report's `summary_population`. Runtime and sampler diagnostics retain their
+saved values; unavailable legacy PL runtime stays missing. The original MAT
+files and Python reference results remain unchanged.
+
+Options `include_bi_hmc=false`, `bi_hmc_source` (explicit Python MAT path), and
+`bi_hmc_resolution` (saved resolution label/index, default first) are supported
+by the main plotter and direct study helpers. One reference resolution is reused,
+not pooled across resolutions or counted as extra independent trials. If the
+matching Python file has no BI_HMC results, none are fabricated.
+
+Equal seed integers across MATLAB and Python identify corresponding experiment
+settings but not identical data. For ordinary/initialization comparison files,
+cross-source hypothesis tests use independent rank-sum tests, while original PL
+optimizer pairs retain paired sign tests. The aggregate record-length/noise
+plotting routes produce descriptive summaries rather than new hypothesis tests.
+
 ## Console progress and estimated time remaining
 
 All studies log progress by default, independently of optimizer verbosity.

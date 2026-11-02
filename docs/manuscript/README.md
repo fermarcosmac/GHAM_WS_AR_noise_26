@@ -1,5 +1,15 @@
 # Condensed Section 4 and associated appendices
 
+## BI-HMC appendix
+
+`appendix_bi_hmc.tex` is a separate manuscript-ready appendix describing the
+implemented Bayesian comparator. Insert it while already in appendix mode and
+merge `bi_hmc_references.bib` into the manuscript bibliography. It uses the
+manuscript's `theta`, `C`, `u`, `tau`, model orders and noise notation. The
+likelihood includes the finite-burn-in AR boundary contribution; sampler/prior
+values were checked against the saved Monte Carlo and record-length payloads.
+This appendix does not modify the Section 4 fragments or the experiments.
+
 ## Files and insertion
 
 - `section4_revised.tex`: replace the supplied Section 4 in full, including its

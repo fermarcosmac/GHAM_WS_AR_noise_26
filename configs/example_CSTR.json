@@ -8,6 +8,7 @@
   "python_optim_config": "optim_configs.json",
   "matlab_optim_config": "optim_configs.json",
   "selected_methods": [
+    "BI_HMC",
     "RGLS",
     "WS-GNI",
     "WS-GGI",

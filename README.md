@@ -682,6 +682,36 @@ BI_HMC has posterior histograms and final output/error comparisons; it is exclud
 from optimizer trajectories and Hessian-conditioning panels while participating
 in final-estimate/error, hypothesis-test, and total-runtime summaries.
 
+PL presentations automatically include the **same saved BI_HMC reference** from
+the corresponding Python/FSM file. This applies to ordinary comparisons,
+initialization, noise and record-length studies; no inference is rerun and no
+MAT file is modified. A skipped PL `BI_HMC` entry is replaced in memory, rather
+than duplicated. The helper checks the benchmark, physical parameters and study
+conditions, and aligns record lengths/noise levels and repetition seeds.
+
+```matlab
+% Regenerate both parametrizations' reports using the existing saved results:
+plot_comparison_results(struct('study','record_length','experiment_name','example_1'));
+% Custom PL/Python filenames; only the PL presentation is requested:
+plot_comparison_results(struct('data_files',{{'results/local/custom_pl.mat'}}, ...
+    'bi_hmc_source','results/local/custom_python.mat'));
+```
+
+`include_bi_hmc=false` disables this reuse. `bi_hmc_source` selects an explicit
+Python MAT file; otherwise the plotter discovers the sibling `_fsm` file.
+`bi_hmc_resolution` chooses a saved record-length resolution by label or index
+(default: first); its one set of Bayesian results is a common reference for PL,
+not additional independent trials. The direct noise/record-length helpers accept
+the same options, including when given a loaded payload.
+
+Equal MATLAB/Python seeds do not give identical records. Cross-source BI_HMC
+comparisons therefore use independent two-sided Wilcoxon rank-sum tests, while
+the original PL optimizer pairs retain their paired exact sign tests. Holm
+adjustment covers the combined family. Cells marked `RS` show cross-sample
+win probabilities and rank-sum p-values; paired binomial confidence intervals
+are not assigned to those cells. Imported output plots retain the Python
+record and its saved reconstruction, labeled `Python record`.
+
 The lower-level helpers are also callable:
 
 ```matlab
@@ -728,7 +758,9 @@ plotter defaults to export. `outcomes` is a numeric MATLAB table. Exported
 summaries include diagnostic/bias CSVs and a separate
 `record_length_outcomes_<experiment>_<pl|fsm>.csv` with counts and percentages.
 The existing `record_length_outcomes_*.pdf` exports now contain tables.
-The plotter visualizes results; it does not perform new hypothesis tests.
+The aggregate record-length route visualizes saved estimates and recomputes
+descriptive summaries; it does not run hypothesis tests. Ordinary comparison
+and initialization routes do run the configured statistical comparisons.
 
 ### Source diagrams
 
@@ -779,6 +811,7 @@ python -B -m unittest discover -s python -p "test_*.py" -v
 ```matlab
 addpath('mlab');
 test_comparison_diagnostics;
+test_shared_bi_hmc;
 test_identification_studies;
 test_noise_study;
 test_plot_noise_study;

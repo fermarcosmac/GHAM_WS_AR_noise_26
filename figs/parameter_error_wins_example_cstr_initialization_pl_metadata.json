@@ -53,7 +53,9 @@
   ],
   "FamilySize": 28,
   "PairingCheck": "metadata_validated",
-  "ConfidenceIntervals": "unadjusted exact binomial; conditional on valid non-tied pairs",
+  "ConfidenceIntervals": "unadjusted exact binomial for paired tests only; independent reference CIs omitted",
+  "SharedReferenceMethods": [],
+  "Tests": "paired exact sign within original dataset; independent rank-sum against reused Python reference",
   "SourceFile": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_CSTR\\initialization_pl.mat",
   "SourceGeneratedAt": "2026-10-20T17:52:50"
 }

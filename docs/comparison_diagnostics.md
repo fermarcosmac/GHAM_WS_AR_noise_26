@@ -119,7 +119,7 @@ Python `BI_HMC` uses a separate sampler loop with `method_kind="bayesian"` and
 `point_estimate="posterior_mean"`. Its optimizer histories are empty; iteration
 summaries are NaN and HMC draws are never counted as optimizer updates. The
 same original-coefficient `theta_hat`, terminal errors, and output RMSE enter
-final comparison tables, boxplots and paired hypothesis tests. Posterior draws,
+final comparison tables, boxplots and hypothesis tests. Posterior draws,
 innovation-variance draws, sampler diagnostics and transition counts are saved
 separately. Mixed MATLAB structs preserve the union of result fields, in any
 method order.
@@ -143,6 +143,35 @@ Equal seeds across MATLAB and Python do **not** imply equal generated data.
 The identifiers allow checking actual data equality; this change does not add a
 shared cross-language data generator. Use the saved configuration together with
 the repository revision that produced a run for reproducibility.
+
+`include_shared_bi_hmc` reuses the saved Python reference in PL plotting and
+analysis, without changing the original MAT files or running inference. It is
+called by `plot_comparison_results` and the direct noise/record-length helpers.
+Existing skipped PL entries are replaced; absent entries are appended. Final
+estimates, runtime, validity and sampler diagnostics retain their source values.
+Copied record-length bias/RMSE summaries use the PL report's selected cohort.
+The returned payload records `shared_bi_hmc` provenance and the selected source
+resolution. Multiple saved FSM resolutions are not pooled: the first is the
+default reference, selectable with `bi_hmc_resolution`.
+
+Comparison summaries mark imported rows with `shared_reference_methods`.
+`pairwise_parameter_error_wins` keeps the original paired exact sign tests for
+the PL optimizer pairs and uses an independent two-sided `ranksum` test for
+pairs involving the copied reference. MATLAB documents `ranksum` for independent
+samples ([MathWorks](https://www.mathworks.com/help/stats/ranksum.html)). All
+applicable p-values share the existing Holm family. The CSV `Test` field identifies
+the test. Rank-sum rows have separate valid sample counts, no `ValidPairs` or
+binomial CIs, and a descriptive cross-sample win probability (ties receive half
+credit). The trial CSV labels their columns `unpaired_sample_columns`, never
+matched wins. Initialization comparisons on different fixed records describe
+the two saved conditional experiments, not a matched-start/data experiment.
+
+The copied representative result retains its own measured record in
+`presentation_example_data`; output overlays use that record and the saved
+Python reconstruction, rather than scoring its fitted parameters on the PL
+record and presenting that as the original fit. Posterior draws and original
+per-run metadata remain unchanged. Set `include_bi_hmc=false` for the original
+PL-only analysis, or `bi_hmc_source` for a custom Python MAT file.
 
 FSM `est_loss_hist` is mean squared reconstructed innovation. PL
 `est_loss_hist` is half the sum of squared residuals with the refreshed

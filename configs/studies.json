@@ -30,8 +30,7 @@
     "summary_population": "finite",
     "save_case_results": false,
     "fsm_resolutions": [
-      {"label": "fsm_128", "fsm_tau_g": 128, "fsm_tau_h": 128, "fsm_n_freq": 1024},
-      {"label": "fsm_256", "fsm_tau_g": 256, "fsm_tau_h": 256, "fsm_n_freq": 2048}
+      {"label": "fsm_128", "fsm_tau_g": 128, "fsm_tau_h": 128, "fsm_n_freq": 1024}
     ]
   }
 }

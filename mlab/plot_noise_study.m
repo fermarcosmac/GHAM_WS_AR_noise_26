@@ -2,7 +2,9 @@ function [figures, report] = plot_noise_study(payload, options)
 % Plot the saved noise sweep for PL or FSM; never rerun identification.
 % One run: final errors/estimates. Repeated runs: means and 95% MC intervals.
 if nargin<2, options=struct(); end
-if ischar(payload) || isstring(payload), payload=load(payload); end
+source_file='';
+if ischar(payload) || isstring(payload), source_file=char(payload); payload=load(payload); end
+payload=include_shared_bi_hmc(payload,source_file,options);
 s=payload.study;
 assert(strcmp(char(s.type),'noise'),'Expected a saved noise study.');
 backend=char(payload.parametrization);
