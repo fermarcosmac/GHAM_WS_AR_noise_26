@@ -8,6 +8,7 @@
   "AbsoluteTieTolerance": 0,
   "Runs": 30,
   "MethodNames": [
+    "BI_HMC",
     "RGLS",
     "WS-GNI",
     "WS-GGI",
@@ -19,6 +20,7 @@
     "WS-LGHAM-3-TIK"
   ],
   "MethodLabels": [
+    "BI-HMC",
     "RLS",
     "WS-GNI",
     "WS-GGI",
@@ -30,6 +32,7 @@
     "LHAM-3-TIK"
   ],
   "FiniteCounts": [
+    30,
     14,
     16,
     30,
@@ -46,14 +49,18 @@
     false,
     false,
     false,
+    false,
     true,
     false,
     false,
     false
   ],
-  "FamilySize": 28,
+  "FamilySize": 36,
   "PairingCheck": "metadata_validated",
-  "ConfidenceIntervals": "unadjusted exact binomial; conditional on valid non-tied pairs",
+  "ConfidenceIntervals": "unadjusted exact binomial for paired tests only; independent reference CIs omitted",
+  "SharedReferenceMethods": "BI_HMC",
+  "Tests": "paired exact sign within original dataset; independent rank-sum against reused Python reference",
   "SourceFile": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_1\\initialization_pl.mat",
-  "SourceGeneratedAt": "2026-10-20T16:48:29"
+  "SourceGeneratedAt": "2026-11-02T14:52:07",
+  "SharedReferenceSource": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_1\\initialization_fsm.mat"
 }

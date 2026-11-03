@@ -1,0 +1,50 @@
+% Requires \usepackage{booktabs}.
+% Sources: results/example_CSTR/comparison_{pl,fsm}_montecarlo.mat.
+% PL total wall-clock times recovered from all_runs{r}(m).total_wall_time.
+% All finite final estimates included; sample standard deviation uses n-1.
+\begin{table}[tbp]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{CSTR Monte Carlo results (PL parametrization). Entries are mean $\pm$ sample standard deviation over 30 runs. BI-HMC is the shared Python reference.}
+\label{tab:cstr-montecarlo-pl}
+\begin{tabular}{lrrr}
+\toprule
+Method & Parameter error (\%) & Output RMSE & Wall time (s) \\
+\midrule
+RLS & $1.3345 \pm 1.1038$ & $0.012105 \pm 0.006105$ & $0.02609 \pm 0.02610$ \\
+WS-GNI & $1.3345 \pm 1.1038$ & $0.012105 \pm 0.006105$ & $0.02083 \pm 0.00930$ \\
+WS-GGI & $18.0351 \pm 1.1452$ & $0.023773 \pm 0.003864$ & $0.24220 \pm 0.01499$ \\
+GHAM-1-dH & $1.3345 \pm 1.1038$ & $0.012105 \pm 0.006105$ & $0.32834 \pm 0.02358$ \\
+GHAM-2-dH & $1.3345 \pm 1.1038$ & $0.012105 \pm 0.006105$ & $0.17790 \pm 0.01744$ \\
+GHAM-2-I & $23.2888 \pm 0.7723$ & $0.028485 \pm 0.003165$ & $0.29883 \pm 0.02904$ \\
+LHAM-1-TIK & $2.3903 \pm 1.3562$ & $0.012444 \pm 0.006029$ & $0.31741 \pm 0.03203$ \\
+LHAM-3-TIK & $1.4905 \pm 1.1309$ & $0.012122 \pm 0.006103$ & $0.27118 \pm 0.05482$ \\
+BI-HMC & $0.7898 \pm 0.5435$ & $0.014726 \pm 0.011068$ & $232.318 \pm 26.474$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[tbp]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{CSTR Monte Carlo results (FSM parametrization). Entries are mean $\pm$ sample standard deviation over 30 runs.}
+\label{tab:cstr-montecarlo-fsm}
+\begin{tabular}{lrrr}
+\toprule
+Method & Parameter error (\%) & Output RMSE & Wall time (s) \\
+\midrule
+BI-HMC & $0.7898 \pm 0.5435$ & $0.014726 \pm 0.011068$ & $232.318 \pm 26.474$ \\
+Newton & $2.2587 \pm 2.2092$ & $0.015451 \pm 0.011096$ & $40.353 \pm 11.059$ \\
+GI & $2.2637 \pm 2.2067$ & $0.015467 \pm 0.011089$ & $18.611 \pm 6.828$ \\
+GHAM-1-dH & $2.3162 \pm 2.1809$ & $0.015634 \pm 0.011014$ & $35.250 \pm 10.006$ \\
+GHAM-2-dH & $3.5796 \pm 1.6875$ & $0.020899 \pm 0.009236$ & $30.930 \pm 7.824$ \\
+GHAM-2-H & $3.3904 \pm 1.7502$ & $0.020043 \pm 0.009485$ & $29.656 \pm 7.782$ \\
+GHAM-2-I & $3.4098 \pm 1.7425$ & $0.020136 \pm 0.009458$ & $28.200 \pm 2.728$ \\
+LHAM-1-TIK & $2.2587 \pm 2.2092$ & $0.015451 \pm 0.011095$ & $10.219 \pm 0.937$ \\
+LHAM-3-TIK & $2.2588 \pm 2.2093$ & $0.015451 \pm 0.011096$ & $8.216 \pm 0.765$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+

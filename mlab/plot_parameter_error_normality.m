@@ -12,7 +12,7 @@ end
 valid=isfinite(errors) & ismember(states,["ok","converged","stalled","max_iterations","unrecorded"]);
 M=height(report); n_cols=3; n_rows=ceil(M/n_cols);
 fig=figure('Name',sprintf('%s %s Monte Carlo error normality',string(dataset.experiment.name),dataset.parametrization), ...
-    'Color','w','Units','centimeters','Position',[2 2 30 7.5*n_rows]);
+    'Color','w','Units','centimeters','Position',[2 2 16 6*n_rows+1]);
 tl=tiledlayout(fig,n_rows,n_cols,'TileSpacing','compact','Padding','compact');
 legend_added=false;
 for m=1:M
@@ -52,12 +52,13 @@ for m=1:M
             'Interpreter','none','FontSize',8,'Color','k','BackgroundColor','w','Margin',1);
     end
     set(ax,'Color','w','XColor','k','YColor','k','GridColor',[.7 .7 .7],'FontSize',8);
-    title(ax,report.Label(m),'Interpreter','none','Color','k','FontSize',10);
+    title(ax,method_figure_label(report.Label(m)),'Interpreter','none','Color','k','FontSize',9);
 end
 for m=M+1:n_rows*n_cols, axis(nexttile(tl),'off'); end
 title(tl,{sprintf('%s | %s | Monte Carlo final parameter errors',string(dataset.experiment.name),dataset.parametrization), ...
-    sprintf('Shapiro-Wilk; Holm alpha = %.3g; no outlier filtering; non-rejection does not establish normality',info.Alpha)}, ...
-    'Interpreter','none','Color','k','FontSize',10);
+    sprintf('Shapiro-Wilk; Holm alpha = %.3g; no outlier filtering',info.Alpha), ...
+    'Non-rejection does not establish normality'}, ...
+    'Interpreter','none','Color','k','FontSize',9);
 xlabel(tl,'Final relative parameter error (%)','Interpreter','none','Color','k');
 ylabel(tl,'Probability density','Interpreter','none','Color','k');
 if export_figures

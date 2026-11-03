@@ -17,7 +17,7 @@ for j = 1:numel(runs)
     runs{j} = results;
     for m = 1:numel(results)
         r = results(m);
-        if is_bayesian_result(r) || ~isfield(r,'diagnostics'), continue; end
+        if is_bayesian_result(r) || ~has_diagnostics(r), continue; end
         names = union(names,{char(r.name)},'stable');
         s = summarize_optimization_diagnostics(r.diagnostics);
         entry = struct('method',string(r.name),'run',j,'status',string(r.status), ...
@@ -49,11 +49,12 @@ if nargin < 6 || isempty(method_colors)
     method_colors = diagnostic_colors(numel(method_names));
 end
 fig = figure('Name',[dataset.parametrization ' optimization diagnostics'], ...
-    'Color','w','Position',[80 80 1550 850]);
+    'Color','w','Units','centimeters','Position',[2 2 16 12], ...
+    'DefaultAxesFontSize',8,'DefaultTextFontSize',9);
 figures = fig;
 tl = tiledlayout(fig,2,3,'TileSpacing','compact','Padding','compact');
-title(tl,sprintf('%s: method comparison; finite medians and interquartile bands', ...
-    dataset.parametrization),'Interpreter','none','Color','k');
+title(tl,{[dataset.parametrization ': method comparison'], ...
+    'Finite medians and interquartile bands'},'Interpreter','none','Color','k','FontSize',9);
 axes_list = gobjects(1,6);
 for k = 1:6
     axes_list(k) = nexttile(tl);
@@ -68,7 +69,7 @@ for m = 1:numel(names)
     for j = 1:numel(runs)
         idx = find(strcmp({runs{j}.name},names{m}),1);
         if ~isempty(idx) && ~is_bayesian_result(runs{j}(idx)) && ...
-                ~strcmp(runs{j}(idx).status,'skipped') && isfield(runs{j}(idx),'diagnostics')
+                ~strcmp(runs{j}(idx).status,'skipped') && has_diagnostics(runs{j}(idx))
             selected{end+1} = runs{j}(idx); %#ok<AGROW>
         end
     end
@@ -93,9 +94,9 @@ end
 set(axes_list([1 2 3 5 6]),'YScale','log');
 title(axes_list(1),'Objective','Interpreter','none');
 decorate(axes_list(1),'State iteration','Objective');
-title(axes_list(2),'Raw Hessian condition (finite samples)','Interpreter','none');
+title(axes_list(2),sprintf('Raw Hessian condition\n(finite samples)'),'Interpreter','none');
 decorate(axes_list(2),'Evaluation iteration','2-norm condition');
-title(axes_list(3),'Solver matrix condition (finite samples)','Interpreter','none');
+title(axes_list(3),sprintf('Solver matrix condition\n(finite samples)'),'Interpreter','none');
 decorate(axes_list(3),'Evaluation iteration','2-norm condition');
 yline(axes_list(4),0,':k','HandleVisibility','off');
 title(axes_list(4),'Raw signed curvature','Interpreter','none');
@@ -105,7 +106,7 @@ decorate(axes_list(5),'Evaluation iteration','Norm');
 title(axes_list(6),'Applied step norm','Interpreter','none');
 decorate(axes_list(6),'Evaluation iteration','Norm');
 lgd = legend(axes_list(1),method_handles,labels,'Interpreter','none', ...
-    'Orientation','horizontal','NumColumns',min(4,numel(labels)),'FontSize',10, ...
+    'Orientation','horizontal','NumColumns',min(3,numel(labels)),'FontSize',8, ...
     'TextColor','k','Color','w');
 lgd.Layout.Tile = 'south';
 for ax = axes_list
@@ -118,6 +119,12 @@ end
 if export_figures
     exportgraphics(fig,fullfile(fig_dir,['optimization_' prefix '.pdf']),'ContentType','vector');
 end
+end
+
+function tf = has_diagnostics(result)
+% Merging legacy and current results can add diagnostics=[] to old runs.
+tf = isfield(result,'diagnostics') && isstruct(result.diagnostics) && ...
+    ~isempty(result.diagnostics);
 end
 
 function matrix = history_matrix(runs,field)

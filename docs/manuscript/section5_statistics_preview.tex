@@ -1,0 +1,19 @@
+% Build from the repository root; the figure paths are root-relative.
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=22mm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx}
+\setlength{\emergencystretch}{2em}
+\begin{document}
+% Match the intended insertion point in the supplied manuscript.
+\setcounter{section}{5}
+\setcounter{subsection}{3}
+\setcounter{table}{8}
+\setcounter{figure}{18}
+\setcounter{equation}{77}
+\input{docs/manuscript/section5_hypothesis_tests}
+\clearpage
+\input{docs/manuscript/section5_initialization_statistics}
+\clearpage
+\bibliographystyle{plain}
+\bibliography{docs/manuscript/section5_statistics_references}
+\end{document}

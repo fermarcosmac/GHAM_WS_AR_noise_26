@@ -68,8 +68,11 @@ assert(initial.results.accepted_updates==0 && initial.results.iterations==1);
 
 % Exercise new and old files through the public plotting entry point.
 save(options.output_file,'-struct','p','-v7');
-plot_comparison_results(struct('data_files',{{options.output_file}}, ...
+plotted = plot_comparison_results(struct('data_files',{{options.output_file}}, ...
     'export_figures',false,'diagnostics_only',false));
+for j = 1:numel(p.all_runs)
+    assert(isequal(plotted.mc_summary.total_wall_time_runs(:,j),[p.all_runs{j}.total_wall_time].'));
+end
 close all;
 [figures, report] = plot_optimization_diagnostics(p,folder,'test',true);
 assert(numel(figures)==1 && height(report)==18);
@@ -77,7 +80,7 @@ assert(exist(fullfile(folder,'optimization_test.pdf'),'file')==2);
 assert(numel(findobj(figures,'Type','axes'))==6);
 all_axes = findobj(figures,'Type','axes');
 assert(all(arrayfun(@(ax)isequal(ax.Color,[1 1 1]),all_axes)));
-titles = arrayfun(@(ax)string(ax.Title.String),all_axes);
+titles = arrayfun(@(ax)replace(string(ax.Title.String),newline," "),all_axes);
 assert(any(titles=="Raw Hessian condition (finite samples)"));
 assert(any(titles=="Solver matrix condition (finite samples)"));
 assert(~any(contains(titles,"Fractions")));
@@ -94,6 +97,10 @@ assert(exist(fullfile(folder,'optimization_summary_test.csv'),'file')==2);
 close all;
 legacy = load(fullfile(root,'..','results','example_1','comparison_fsm_example.mat'));
 [figures, report] = plot_optimization_diagnostics(legacy,folder,'legacy',false);
+assert(isempty(figures) && isempty(report));
+% A merged legacy result has the field, but its value is an empty double.
+legacy.results(1).diagnostics = [];
+[figures, report] = plot_optimization_diagnostics(legacy,folder,'legacy_merged',false);
 assert(isempty(figures) && isempty(report));
 if ~isempty(fsm_file)
     fsm = load(fsm_file);

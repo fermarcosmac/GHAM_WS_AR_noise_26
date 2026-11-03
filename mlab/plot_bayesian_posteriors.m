@@ -24,8 +24,9 @@ for m=1:numel(results)
     end
     total=P+~isempty(variance); ncols=min(3,total); nrows=ceil(total/ncols);
     fig=figure('Name',sprintf('%s %s posterior distributions', ...
-        dataset.parametrization,char(string(result.name))), ...
-        'Color','w','Units','centimeters','Position',[2 2 25 6.6*nrows]);
+        dataset.parametrization,method_figure_label(result.name)), ...
+        'Color','w','Units','centimeters','Position',[2 2 16 5*nrows+1.5], ...
+        'DefaultAxesFontSize',8,'DefaultTextFontSize',9);
     if isprop(fig,'Theme'), fig.Theme='light'; end
     tl=tiledlayout(fig,nrows,ncols,'TileSpacing','compact','Padding','compact');
     point=double(result.theta_hat(:));
@@ -70,7 +71,7 @@ for m=1:numel(results)
         method_figure_label(char(string(result.name)))),'Interpreter','none');
     subtitle(tl,{sprintf('%d retained draws; representative record; warm-up excluded', ...
         size(samples,1)),['Sampler status: ' char(string(result.status))]}, ...
-        'Interpreter','none','FontSize',9);
+        'Interpreter','none','FontSize',8);
     figures(end+1)=fig; %#ok<AGROW>
     if isfield(options,'export_figures') && options.export_figures
         folder=char(string(options.fig_dir));

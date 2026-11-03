@@ -1,0 +1,544 @@
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_pl.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_fsm_montecarlo.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat
+
+========================================================================
+WIENER SYSTEM PARAMETERS IN SAVED RESULTS
+========================================================================
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_fsm_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_pl_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_pl.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_fsm_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:30   30     0.68166        0.49633        0.01916        0.01546        232.77586      31.15379      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.04606        0.00463       
+Newton                 max_iterations:30      30     1.24945        1.50234        0.01925        0.01561        28.68120       1.49096       
+GI                     max_iterations:30      30     1.24945        1.50234        0.01925        0.01561        13.38234       0.76579       
+GHAM-1-dH              max_iterations:30      30     1.24945        1.50234        0.01925        0.01561        28.51364       1.32435       
+GHAM-2-dH              max_iterations:30      30     1.24917        1.50241        0.01925        0.01561        29.26909       2.61414       
+GHAM-2-H               max_iterations:30      30     1.24919        1.50241        0.01925        0.01561        32.29066       8.01678       
+GHAM-2-I               max_iterations:30      30     1.24921        1.50240        0.01925        0.01561        36.16779       10.97767      
+LHAM-1-TIK             converged:30           30     1.24945        1.50234        0.01925        0.01561        19.36978       5.80204       
+LHAM-3-TIK             converged:30           30     1.24945        1.50234        0.01925        0.01561        17.22675       5.25093       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_pl_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+RLS                    unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.10595        0.07128       
+WS-GNI                 unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.10095        0.07199       
+WS-GGI                 unrecorded:30          30     1.72008        1.09859        0.02155        0.01645        0.71657        0.25048       
+GHAM-1-dH              unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.39336        0.13362       
+GHAM-2-dH              unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.19843        0.09436       
+GHAM-2-H               unrecorded:30          0      NaN            NaN            NaN            NaN            0.00000        0.00000       
+GHAM-2-I               unrecorded:30          30     1.09614        0.97218        0.02141        0.01645        0.70198        0.27998       
+LHAM-1-TIK             unrecorded:30          30     1.27521        1.32761        0.02141        0.01654        0.63671        0.20883       
+LHAM-3-TIK             unrecorded:30          30     1.29640        0.87782        0.02149        0.01660        0.37196        0.14843       
+BI-HMC                 sampling_complete:30   30     0.68166        0.49633        0.01916        0.01546        232.77586      31.15379      
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     1.07418        0.00812        0.01898        0.00000        214.85488      63.90846      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.06607        0.02983       
+Newton                 converged:2,max_iterations:28 30     1.80667        0.00102        0.01913        0.00000        34.11267       6.29861       
+GI                     converged:5,invalid_update:6,max_iterations:19 24     1.80705        0.00001        0.01913        0.00000        14.30604       8.74982       
+GHAM-1-dH              converged:2,max_iterations:28 30     5.94216        22.27492       0.06830        0.26796        39.77322       13.62142      
+GHAM-2-dH              invalid_update:2,max_iterations:28 28     6.40720        11.91429       0.03099        0.02872        38.54848       14.30916      
+GHAM-2-H               max_iterations:30      30     10.38495       45.52765       0.06696        0.25504        42.62010       12.63252      
+GHAM-2-I               invalid_update:12,max_iterations:18 18     1.73308        0.17243        0.01916        0.00008        27.98882       24.36733      
+LHAM-1-TIK             converged:29,max_iterations:1 30     1.80694        0.00036        0.01913        0.00000        27.38031       7.52724       
+LHAM-3-TIK             converged:30           30     1.80695        0.00034        0.01913        0.00000        23.36368       6.19360       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_pl.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     1.07418        0.00812        0.01898        0.00000        214.85488      63.90846      
+RLS                    converged:14,invalid_update:16 14     1.67386        0.00000        0.01651        0.00000        0.11297        0.12911       
+WS-GNI                 invalid_update:14,stalled:16 16     1.67386        0.00000        0.01651        0.00000        0.12345        0.12456       
+WS-GGI                 max_iterations:30      30     18.36247       7.65776        0.03110        0.00726        1.26355        0.28941       
+GHAM-1-dH              invalid_update:1,stalled:29 29     1.67386        0.00000        0.01651        0.00000        1.14684        0.45920       
+GHAM-2-dH              invalid_update:4,stalled:26 26     1.67386        0.00000        0.01651        0.00000        0.57902        0.31746       
+GHAM-2-H               skipped:30             0      NaN            NaN            NaN            NaN            0.00208        0.00074       
+GHAM-2-I               invalid_update:2,max_iterations:28 28     18.04707       7.34838        0.03070        0.00704        1.48923        0.52919       
+LHAM-1-TIK             max_iterations:30      30     2.07858        1.30226        0.01682        0.00094        1.76271        0.51339       
+LHAM-3-TIK             converged:10,max_iterations:20 30     1.41052        0.18782        0.01648        0.00031        1.63241        0.36369       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_montecarlo_fsm (0/36 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_1_montecarlo_fsm (9/9 reject normality after Holm).
+[Warning: No per-run metadata for example_1/PL/montecarlo: pairing uses saved run columns.] 
+[> In pairwise_parameter_error_wins>check_pairing (line 185)
+In pairwise_parameter_error_wins (line 57)
+In plot_parameter_error_wins (line 4)
+In plot_comparison_results (line 148)
+In run_parameter_error_win_analysis (line 15)
+In run_current_statistics (line 6)
+In run (line 100)] 
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_montecarlo_pl (7/45 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_1_montecarlo_pl (8/9 reject normality after Holm).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_initialization_fsm (26/36 significant comparisons).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_initialization_pl (22/36 significant comparisons).
+
+Done. MATLAB figures rendered from saved comparison data.
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_pl.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_fsm_montecarlo.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat
+
+========================================================================
+WIENER SYSTEM PARAMETERS IN SAVED RESULTS
+========================================================================
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_fsm_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_pl_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_pl.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_fsm_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     0.78984        0.54348        0.01473        0.01107        232.31848      26.47353      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.06758        0.02272       
+Newton                 max_iterations:30      30     2.25868        2.20925        0.01545        0.01110        40.35345       11.05911      
+GI                     max_iterations:30      30     2.26367        2.20669        0.01547        0.01109        18.61128       6.82849       
+GHAM-1-dH              max_iterations:30      30     2.31623        2.18087        0.01563        0.01101        35.24951       10.00610      
+GHAM-2-dH              max_iterations:30      30     3.57960        1.68747        0.02090        0.00924        30.92996       7.82356       
+GHAM-2-H               max_iterations:30      30     3.39037        1.75016        0.02004        0.00948        29.65626       7.78229       
+GHAM-2-I               max_iterations:30      30     3.40983        1.74252        0.02014        0.00946        28.20023       2.72791       
+LHAM-1-TIK             converged:30           30     2.25866        2.20923        0.01545        0.01110        10.21893       0.93667       
+LHAM-3-TIK             converged:30           30     2.25878        2.20928        0.01545        0.01110        8.21574        0.76472       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_pl_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+RLS                    converged:30           30     1.33451        1.10377        0.01210        0.00610        0.02609        0.02610       
+WS-GNI                 converged:12,stalled:18 30     1.33451        1.10377        0.01210        0.00610        0.02083        0.00930       
+WS-GGI                 max_iterations:30      30     18.03508       1.14525        0.02377        0.00386        0.24220        0.01499       
+GHAM-1-dH              stalled:30             30     1.33451        1.10377        0.01210        0.00610        0.32834        0.02358       
+GHAM-2-dH              stalled:30             30     1.33451        1.10377        0.01210        0.00610        0.17790        0.01744       
+GHAM-2-H               skipped:30             0      NaN            NaN            NaN            NaN            0.00051        0.00009       
+GHAM-2-I               max_iterations:30      30     23.28877       0.77229        0.02848        0.00317        0.29883        0.02904       
+LHAM-1-TIK             max_iterations:30      30     2.39031        1.35622        0.01244        0.00603        0.31741        0.03203       
+LHAM-3-TIK             converged:28,max_iterations:2 30     1.49053        1.13086        0.01212        0.00610        0.27118        0.05482       
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     0.78984        0.54348        0.01473        0.01107        232.31848      26.47353      
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:30   30     0.19965        0.00296        0.01555        0.00000        214.98640      67.12378      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.08344        0.02935       
+Newton                 max_iterations:30      30     2.01416        0.08404        0.01607        0.00026        44.26030       13.68343      
+GI                     max_iterations:30      30     2.01057        0.07690        0.01606        0.00024        20.27961       5.66830       
+GHAM-1-dH              max_iterations:30      30     2.06205        0.09823        0.01622        0.00032        42.16206       11.41902      
+GHAM-2-dH              max_iterations:30      30     3.55890        0.70291        0.02213        0.00306        41.88049       12.91544      
+GHAM-2-H               max_iterations:30      30     3.35703        0.69236        0.02129        0.00297        40.85234       12.94010      
+GHAM-2-I               max_iterations:30      30     3.35267        0.64606        0.02127        0.00277        36.73146       9.27012       
+LHAM-1-TIK             converged:30           30     2.00841        0.07836        0.01605        0.00024        13.37546       2.68895       
+LHAM-3-TIK             converged:30           30     2.00883        0.07856        0.01605        0.00024        10.49864       1.91779       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_pl.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:30   30     0.19965        0.00296        0.01555        0.00000        214.98640      67.12378      
+RLS                    converged:14,invalid_update:16 14     1.80532        0.00000        0.00797        0.00000        0.04301        0.03905       
+WS-GNI                 converged:4,invalid_update:14,stalled:12 16     1.80532        0.00000        0.00797        0.00000        0.04204        0.03530       
+WS-GGI                 max_iterations:30      30     20.88292       2.80519        0.02389        0.00267        1.06661        0.28906       
+GHAM-1-dH              max_iterations:17,stalled:13 30     1.80532        0.00000        0.00797        0.00000        1.36287        0.28483       
+GHAM-2-dH              invalid_update:2,stalled:28 28     1.80532        0.00000        0.00797        0.00000        0.72785        0.28386       
+GHAM-2-H               skipped:30             0      NaN            NaN            NaN            NaN            0.00174        0.00073       
+GHAM-2-I               invalid_update:2,max_iterations:28 28     34.84692       4.64256        0.03720        0.00443        1.12082        0.34531       
+LHAM-1-TIK             max_iterations:30      30     4.24839        0.70093        0.00922        0.00047        1.34867        0.31368       
+LHAM-3-TIK             converged:25,max_iterations:5 30     2.13330        0.12386        0.00807        0.00005        1.13078        0.20419       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_montecarlo_fsm (34/36 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_cstr_montecarlo_fsm (9/9 reject normality after Holm).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_montecarlo_pl (21/36 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_cstr_montecarlo_pl (6/9 reject normality after Holm).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_initialization_fsm (30/36 significant comparisons).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_initialization_pl (32/36 significant comparisons).
+
+Done. MATLAB figures rendered from saved comparison data.
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_pl.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_fsm_montecarlo.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat
+
+========================================================================
+WIENER SYSTEM PARAMETERS IN SAVED RESULTS
+========================================================================
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_fsm_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_pl_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_pl.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = -0.31
+  a2   = -0.27
+  b1   = 0.23
+  b2   = 0.98
+  f2   = 0.32
+  d1   = -0.4
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_fsm_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:30   30     0.68166        0.49633        0.01916        0.01546        232.77586      31.15379      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.04606        0.00463       
+Newton                 max_iterations:30      30     1.24945        1.50234        0.01925        0.01561        28.68120       1.49096       
+GI                     max_iterations:30      30     1.24945        1.50234        0.01925        0.01561        13.38234       0.76579       
+GHAM-1-dH              max_iterations:30      30     1.24945        1.50234        0.01925        0.01561        28.51364       1.32435       
+GHAM-2-dH              max_iterations:30      30     1.24917        1.50241        0.01925        0.01561        29.26909       2.61414       
+GHAM-2-H               max_iterations:30      30     1.24919        1.50241        0.01925        0.01561        32.29066       8.01678       
+GHAM-2-I               max_iterations:30      30     1.24921        1.50240        0.01925        0.01561        36.16779       10.97767      
+LHAM-1-TIK             converged:30           30     1.24945        1.50234        0.01925        0.01561        19.36978       5.80204       
+LHAM-3-TIK             converged:30           30     1.24945        1.50234        0.01925        0.01561        17.22675       5.25093       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\comparison_pl_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+RLS                    unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.10595        0.07128       
+WS-GNI                 unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.10095        0.07199       
+WS-GGI                 unrecorded:30          30     1.72008        1.09859        0.02155        0.01645        0.71657        0.25048       
+GHAM-1-dH              unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.39336        0.13362       
+GHAM-2-dH              unrecorded:30          30     1.51001        1.41318        0.02148        0.01656        0.19843        0.09436       
+GHAM-2-H               unrecorded:30          0      NaN            NaN            NaN            NaN            0.00000        0.00000       
+GHAM-2-I               unrecorded:30          30     1.09614        0.97218        0.02141        0.01645        0.70198        0.27998       
+LHAM-1-TIK             unrecorded:30          30     1.27521        1.32761        0.02141        0.01654        0.63671        0.20883       
+LHAM-3-TIK             unrecorded:30          30     1.29640        0.87782        0.02149        0.01660        0.37196        0.14843       
+BI-HMC                 sampling_complete:30   30     0.68166        0.49633        0.01916        0.01546        232.77586      31.15379      
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_fsm.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     1.07418        0.00812        0.01898        0.00000        214.85488      63.90846      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.06607        0.02983       
+Newton                 converged:2,max_iterations:28 30     1.80667        0.00102        0.01913        0.00000        34.11267       6.29861       
+GI                     converged:5,invalid_update:6,max_iterations:19 24     1.80705        0.00001        0.01913        0.00000        14.30604       8.74982       
+GHAM-1-dH              converged:2,max_iterations:28 30     5.94216        22.27492       0.06830        0.26796        39.77322       13.62142      
+GHAM-2-dH              invalid_update:2,max_iterations:28 28     6.40720        11.91429       0.03099        0.02872        38.54848       14.30916      
+GHAM-2-H               max_iterations:30      30     10.38495       45.52765       0.06696        0.25504        42.62010       12.63252      
+GHAM-2-I               invalid_update:12,max_iterations:18 18     1.73308        0.17243        0.01916        0.00008        27.98882       24.36733      
+LHAM-1-TIK             converged:29,max_iterations:1 30     1.80694        0.00036        0.01913        0.00000        27.38031       7.52724       
+LHAM-3-TIK             converged:30           30     1.80695        0.00034        0.01913        0.00000        23.36368       6.19360       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_1\initialization_pl.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     1.07418        0.00812        0.01898        0.00000        214.85488      63.90846      
+RLS                    converged:14,invalid_update:16 14     1.67386        0.00000        0.01651        0.00000        0.11297        0.12911       
+WS-GNI                 invalid_update:14,stalled:16 16     1.67386        0.00000        0.01651        0.00000        0.12345        0.12456       
+WS-GGI                 max_iterations:30      30     18.36247       7.65776        0.03110        0.00726        1.26355        0.28941       
+GHAM-1-dH              invalid_update:1,stalled:29 29     1.67386        0.00000        0.01651        0.00000        1.14684        0.45920       
+GHAM-2-dH              invalid_update:4,stalled:26 26     1.67386        0.00000        0.01651        0.00000        0.57902        0.31746       
+GHAM-2-H               skipped:30             0      NaN            NaN            NaN            NaN            0.00208        0.00074       
+GHAM-2-I               invalid_update:2,max_iterations:28 28     18.04707       7.34838        0.03070        0.00704        1.48923        0.52919       
+LHAM-1-TIK             max_iterations:30      30     2.07858        1.30226        0.01682        0.00094        1.76271        0.51339       
+LHAM-3-TIK             converged:10,max_iterations:20 30     1.41052        0.18782        0.01648        0.00031        1.63241        0.36369       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_montecarlo_fsm (0/36 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_1_montecarlo_fsm (9/9 reject normality after Holm).
+[Warning: No per-run metadata for example_1/PL/montecarlo: pairing uses saved run columns.] 
+[> In pairwise_parameter_error_wins>check_pairing (line 185)
+In pairwise_parameter_error_wins (line 57)
+In plot_parameter_error_wins (line 4)
+In plot_comparison_results (line 148)
+In run_parameter_error_win_analysis (line 15)
+In run_current_statistics (line 6)
+In run (line 100)] 
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_montecarlo_pl (7/45 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_1_montecarlo_pl (8/9 reject normality after Holm).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_initialization_fsm (26/36 significant comparisons).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_1_initialization_pl (22/36 significant comparisons).
+
+Done. MATLAB figures rendered from saved comparison data.
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat
+Including initialization results: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_pl.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_fsm_montecarlo.mat
+PL presentation: reusing saved BI_HMC from C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat
+
+========================================================================
+WIENER SYSTEM PARAMETERS IN SAVED RESULTS
+========================================================================
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_fsm_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_pl_montecarlo.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+FSM parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+PL parametrization (C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_pl.mat)
+  na = 2, nb = 2, nf = 2, nd = 1
+  lambda_g = 10000, sigma_nu = 0.1, burn_in = 100
+  a1   = 0.42
+  a2   = 0.31
+  b1   = -0.56
+  b2   = 0.62
+  f2   = 0.12
+  d1   = -0.28
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_fsm_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     0.78984        0.54348        0.01473        0.01107        232.31848      26.47353      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.06758        0.02272       
+Newton                 max_iterations:30      30     2.25868        2.20925        0.01545        0.01110        40.35345       11.05911      
+GI                     max_iterations:30      30     2.26367        2.20669        0.01547        0.01109        18.61128       6.82849       
+GHAM-1-dH              max_iterations:30      30     2.31623        2.18087        0.01563        0.01101        35.24951       10.00610      
+GHAM-2-dH              max_iterations:30      30     3.57960        1.68747        0.02090        0.00924        30.92996       7.82356       
+GHAM-2-H               max_iterations:30      30     3.39037        1.75016        0.02004        0.00948        29.65626       7.78229       
+GHAM-2-I               max_iterations:30      30     3.40983        1.74252        0.02014        0.00946        28.20023       2.72791       
+LHAM-1-TIK             converged:30           30     2.25866        2.20923        0.01545        0.01110        10.21893       0.93667       
+LHAM-3-TIK             converged:30           30     2.25878        2.20928        0.01545        0.01110        8.21574        0.76472       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+MONTE CARLO METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\comparison_pl_montecarlo.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+RLS                    converged:30           30     1.33451        1.10377        0.01210        0.00610        0.02609        0.02610       
+WS-GNI                 converged:12,stalled:18 30     1.33451        1.10377        0.01210        0.00610        0.02083        0.00930       
+WS-GGI                 max_iterations:30      30     18.03508       1.14525        0.02377        0.00386        0.24220        0.01499       
+GHAM-1-dH              stalled:30             30     1.33451        1.10377        0.01210        0.00610        0.32834        0.02358       
+GHAM-2-dH              stalled:30             30     1.33451        1.10377        0.01210        0.00610        0.17790        0.01744       
+GHAM-2-H               skipped:30             0      NaN            NaN            NaN            NaN            0.00051        0.00009       
+GHAM-2-I               max_iterations:30      30     23.28877       0.77229        0.02848        0.00317        0.29883        0.02904       
+LHAM-1-TIK             max_iterations:30      30     2.39031        1.35622        0.01244        0.00603        0.31741        0.03203       
+LHAM-3-TIK             converged:28,max_iterations:2 30     1.49053        1.13086        0.01212        0.00610        0.27118        0.05482       
+BI-HMC                 sampling_complete:29,sampling_warning:1 30     0.78984        0.54348        0.01473        0.01107        232.31848      26.47353      
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (FSM parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_fsm.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:30   30     0.19965        0.00296        0.01555        0.00000        214.98640      67.12378      
+RLS                    skipped:30             0      NaN            NaN            NaN            NaN            0.08344        0.02935       
+Newton                 max_iterations:30      30     2.01416        0.08404        0.01607        0.00026        44.26030       13.68343      
+GI                     max_iterations:30      30     2.01057        0.07690        0.01606        0.00024        20.27961       5.66830       
+GHAM-1-dH              max_iterations:30      30     2.06205        0.09823        0.01622        0.00032        42.16206       11.41902      
+GHAM-2-dH              max_iterations:30      30     3.55890        0.70291        0.02213        0.00306        41.88049       12.91544      
+GHAM-2-H               max_iterations:30      30     3.35703        0.69236        0.02129        0.00297        40.85234       12.94010      
+GHAM-2-I               max_iterations:30      30     3.35267        0.64606        0.02127        0.00277        36.73146       9.27012       
+LHAM-1-TIK             converged:30           30     2.00841        0.07836        0.01605        0.00024        13.37546       2.68895       
+LHAM-3-TIK             converged:30           30     2.00883        0.07856        0.01605        0.00024        10.49864       1.91779       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+
+========================================================================================================================================
+INITIALIZATION STUDY METHOD SUMMARY (PL parametrization)
+Source: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\mlab\..\results\example_CSTR\initialization_pl.mat
+========================================================================================================================================
+Method                 Status                 N valid Param mean     Param std      RMSE mean      RMSE std       Wall mean (s)  Wall std (s)  
+----------------------------------------------------------------------------------------------------------------------------------------
+BI-HMC                 sampling_complete:30   30     0.19965        0.00296        0.01555        0.00000        214.98640      67.12378      
+RLS                    converged:14,invalid_update:16 14     1.80532        0.00000        0.00797        0.00000        0.04301        0.03905       
+WS-GNI                 converged:4,invalid_update:14,stalled:12 16     1.80532        0.00000        0.00797        0.00000        0.04204        0.03530       
+WS-GGI                 max_iterations:30      30     20.88292       2.80519        0.02389        0.00267        1.06661        0.28906       
+GHAM-1-dH              max_iterations:17,stalled:13 30     1.80532        0.00000        0.00797        0.00000        1.36287        0.28483       
+GHAM-2-dH              invalid_update:2,stalled:28 28     1.80532        0.00000        0.00797        0.00000        0.72785        0.28386       
+GHAM-2-H               skipped:30             0      NaN            NaN            NaN            NaN            0.00174        0.00073       
+GHAM-2-I               invalid_update:2,max_iterations:28 28     34.84692       4.64256        0.03720        0.00443        1.12082        0.34531       
+LHAM-1-TIK             max_iterations:30      30     4.24839        0.70093        0.00922        0.00047        1.34867        0.31368       
+LHAM-3-TIK             converged:25,max_iterations:5 30     2.13330        0.12386        0.00807        0.00005        1.13078        0.20419       
+
+Timing statistics include all recorded attempts from mc_summary.total_wall_time_runs; N valid counts finite performance results.
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_montecarlo_fsm (34/36 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_cstr_montecarlo_fsm (9/9 reject normality after Holm).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_montecarlo_pl (21/36 significant comparisons).
+Exported Shapiro-Wilk histograms: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_normality_example_cstr_montecarlo_pl (6/9 reject normality after Holm).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_initialization_fsm (30/36 significant comparisons).
+Exported parameter-error tests: C:\Users\ferma\PhD\GHAM_WS_AR_noise_26\output\experimental_statistics\parameter_error_wins_example_cstr_initialization_pl (32/36 significant comparisons).
+
+Done. MATLAB figures rendered from saved comparison data.

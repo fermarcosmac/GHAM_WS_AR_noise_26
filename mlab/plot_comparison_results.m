@@ -1,5 +1,6 @@
 function datasets = plot_comparison_results(options)
 % Optional experiment_name/mode/data_files/study/fig_dir/export_figures overrides.
+% show_figures=false (default) exports without opening figure windows.
 %% Plot saved Wiener identification comparisons and initialization studies.
 % Default selection includes available initialization files for the experiment.
 % Use include_initialization=false for comparisons only, or
@@ -21,6 +22,7 @@ script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
 experiment_name = 'example_1';
 mode = 'MONTECARLO';  % EXAMPLE, MONTECARLO, or INITIALIZATION
+show_figures = false; % Set true to display the figures while plotting
 experiment_name = char_value(get_option(options,'experiment_name',experiment_name));
 mode = upper(char_value(get_option(options,'mode',mode)));
 initialization_files = { ...
@@ -54,11 +56,20 @@ if isfield(options,'study') && ~isfield(options,'data_files')
 end
 if isfield(options,'fig_dir'), fig_dir = options.fig_dir; end
 if isfield(options,'export_figures'), export_figures = options.export_figures; end
+show_figures = get_option(options,'show_figures',show_figures);
 diagnostics_only = isfield(options,'diagnostics_only') && options.diagnostics_only;
 statistics_only = get_option(options,'statistics_only',false);
 win_options = get_option(options,'win_test',struct());
 normality_options = get_option(options,'normality',struct());
 assert(~(statistics_only && diagnostics_only),'Select statistics_only or diagnostics_only.');
+
+previous_visibility = get(groot,'defaultFigureVisible');
+restore_visibility = onCleanup(@()set(groot,'defaultFigureVisible',previous_visibility)); %#ok<NASGU>
+if show_figures
+    set(groot,'defaultFigureVisible','on');
+else
+    set(groot,'defaultFigureVisible','off');
+end
 
 set(groot, ...
     'defaultTextInterpreter', 'latex', ...
@@ -66,8 +77,9 @@ set(groot, ...
     'defaultLegendInterpreter', 'latex', ...
     'defaultAxesFontName', 'Times New Roman', ...
     'defaultTextFontName', 'Times New Roman', ...
-    'defaultAxesFontSize', 11, ...
-    'defaultLineLineWidth', 1.55);
+    'defaultAxesFontSize', 9, ...
+    'defaultTextFontSize', 9, ...
+    'defaultLineLineWidth', 1.2);
 
 datasets = struct([]);
 study_plots_loaded = false;
@@ -77,6 +89,12 @@ for i = 1:numel(data_files)
         continue;
     end
     loaded = load(data_files{i});
+    % Preserve legacy optimizer RMSEs before merging newer BI-HMC fields.
+    if isfield(loaded,'mc_summary') && ~isempty(loaded.mc_summary) && ...
+            ~isfield(loaded.mc_summary,'final_output_rmse_runs') && isfield(loaded.mc_summary,'rmse_runs')
+        loaded.mc_summary.final_output_rmse_runs = final_values_from_mc_runs( ...
+            loaded.mc_summary.rmse_runs,numel(loaded.mc_summary.method_names));
+    end
     loaded = include_shared_bi_hmc(loaded,data_files{i},options);
     study_options=options;
     study_options.fig_dir=fig_dir; study_options.export_figures=export_figures;
@@ -175,7 +193,7 @@ for i = 1:numel(datasets)
 
         fig_box = plot_montecarlo_boxplots(datasets(i));
         box_filename = sprintf('montecarlo_parameter_boxplots_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
-        export_if_requested(fig_box, fig_dir, box_filename, export_figures);
+        export_if_requested(fig_box, fig_dir, box_filename, export_figures, 'image');
 
         fig_err_box = plot_montecarlo_final_error_boxplots(datasets(i));
         err_box_filename = sprintf('montecarlo_final_error_boxplots_%s_%s_%s.pdf', experiment_tag, mode_tag, parametrization_tag);
@@ -225,12 +243,40 @@ if iscell(raw_results)
     raw_results = [raw_results{:}];
 end
 ds.results = raw_results(:).';
+if ~isempty(ds.mc_summary) && ~isempty(ds.all_runs)
+    ds.mc_summary = recover_montecarlo_wall_times(ds.mc_summary,ds.all_runs);
+end
+end
+
+function summary = recover_montecarlo_wall_times(summary, runs)
+% Older summaries saved optimizer-only time, but retained full times per run.
+names = cellstr_value(summary.method_names);
+times = NaN(numel(names),numel(runs));
+for j = 1:numel(runs)
+    results = runs{j};
+    if iscell(results), results = [results{:}]; end
+    for m = 1:numel(results)
+        result = results(m);
+        idx = find(strcmp(names,result.name),1);
+        if ~isempty(idx) && isfield(result,'total_wall_time') && ...
+                isscalar(result.total_wall_time) && isfinite(result.total_wall_time)
+            times(idx,j) = double(result.total_wall_time);
+        end
+    end
+end
+if ~any(isfinite(times),'all'), return; end
+if isfield(summary,'total_wall_time_runs')
+    saved = orient_method_run_matrix(summary.total_wall_time_runs,numel(names));
+    missing = ~isfinite(times);
+    times(missing) = saved(missing);
+end
+summary.total_wall_time_runs = times;
 end
 
 function fig = plot_montecarlo_summary(dataset, method_names, colors)
 parametrization = dataset.parametrization;
 fig = figure('Name', sprintf('%s Monte Carlo Summary', parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 22 9.5]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 16 7.5]);
 tl = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax1 = nexttile(tl);
@@ -245,7 +291,8 @@ set(ax2, 'YScale', 'log');
 title(ax2, 'Mean output RMSE');
 ylabel(ax2, 'RMSE');
 
-legend(ax2, 'Location', 'best', 'FontSize', 8);
+lgd = legend(ax2, 'FontSize', 8, 'NumColumns', 3);
+lgd.Layout.Tile = 'south';
 end
 
 function plot_mc_axis(ax, dataset, method_names, colors, mean_field, stderr_field)
@@ -303,9 +350,9 @@ n_cols = 3;
 n_rows = ceil(n_params / n_cols);
 
 fig = figure('Name', sprintf('%s Monte Carlo Parameter Errors', dataset.parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 22 6.4 * n_rows]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 16 6 * n_rows]);
 if initialization_study
-    fig.Position=[3 3 30 8.5*n_rows];
+    fig.Position=[3 3 16 7*n_rows];
     fig.Name=[dataset.parametrization ' initialization final parameter estimates'];
 end
 tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
@@ -321,21 +368,20 @@ for p = 1:n_params
         end
     end
     if any(isfinite(values),'all')
-        if initialization_study
-            groups=repmat(1:numel(method_names),size(values,1),1);
-            keep=isfinite(values);
-            boxchart(ax,groups(keep),values(keep),'BoxFaceColor',[.2 .45 .7]);
-        else
-            boxplot(ax, values, 'Labels', method_labels, 'LabelOrientation', 'inline');
-        end
+        groups=repmat(1:numel(method_names),size(values,1),1);
+        keep=isfinite(values);
+        boxchart(ax,groups(keep),values(keep),'BoxFaceColor',[.2 .45 .7]);
     else
         text(ax,.5,.5,'No finite estimates','Units','normalized','HorizontalAlignment','center');
         xticks(ax,1:numel(method_labels)); xticklabels(ax,method_labels);
     end
     if initialization_study
-        xticks(ax,1:numel(tick_labels)); xticklabels(ax,tick_labels); xtickangle(ax,40);
+        xticks(ax,1:numel(tick_labels)); xticklabels(ax,tick_labels); xtickangle(ax,65);
         xlim(ax,[.5 numel(method_labels)+.5]);
-        set(ax,'TickLabelInterpreter','none','FontSize',8);
+        set(ax,'TickLabelInterpreter','none','FontSize',7.5);
+    else
+        xticks(ax,1:numel(method_labels)); xticklabels(ax,method_labels);
+        xtickangle(ax,65); set(ax,'TickLabelInterpreter','none','FontSize',7.5);
     end
     reference = 0;
     if initialization_study, reference = theta_true(p); end
@@ -364,12 +410,12 @@ for p = (n_params + 1):(n_rows * n_cols)
     axis(nexttile(tl), 'off');
 end
 
-title(tl, sprintf('%s Parametrization: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold', 'FontSize', 11);
+title(tl, sprintf('%s: Monte Carlo Final Parameter Errors', dataset.parametrization), 'FontWeight', 'bold', 'FontSize', 9);
 if initialization_study
-    title(tl,{sprintf('%s: final estimates over %d initializations; fixed input/noise; dashed = truth', ...
+    title(tl,{sprintf('%s: final estimates over %d initializations; dashed = truth', ...
         dataset.parametrization,size(errors,2)), ...
-        'Counts in parentheses = extreme outliers removed per optimizer (outside Q1 - 3 IQR to Q3 + 3 IQR)'}, ...
-        'Interpreter','none','FontSize',10,'Color','k');
+        'Fixed input/noise; counts = outliers removed outside Q1 - 3 IQR to Q3 + 3 IQR'}, ...
+        'Interpreter','none','FontSize',8,'Color','k');
 end
 end
 
@@ -413,13 +459,14 @@ counts = [sum(states=="converged",2),sum(states=="stalled",2),sum(states=="max_i
     sum(~ismember(states,["converged","stalled","max_iterations","ok", ...
     "sampling_complete","sampling_warning","skipped"]),2),sum(states=="skipped",2)];
 fig = figure('Color','w','Name',[dataset.parametrization ' initialization outcomes'], ...
-    'Units','centimeters','Position',[3 3 26 14]);
+    'Units','centimeters','Position',[3 3 16 10]);
 ax = axes(fig); bar(ax,counts,'stacked');
 xticks(ax,1:numel(names));
 xticklabels(ax,cellfun(@method_figure_label,names,'UniformOutput',false)); xtickangle(ax,35);
 ax.TickLabelInterpreter = 'none'; ylabel(ax,'Number of initializations');
-legend(ax,labels,'Interpreter','none','Location','best'); grid(ax,'on'); box(ax,'on');
-title(ax,'Boxplots include finite outcomes; failed and skipped runs have no estimate','Interpreter','none');
+legend(ax,labels,'Interpreter','none','Location','southoutside','NumColumns',3,'FontSize',8); grid(ax,'on'); box(ax,'on');
+title(ax,{'Boxplots include finite outcomes', ...
+    'Failed and skipped runs have no estimate'},'Interpreter','none','FontSize',9);
 end
 
 function value = get_option(options,key,default)
@@ -436,7 +483,7 @@ method_labels = display_method_labels(method_names, dataset.parametrization);
 final_errors = final_errors(keep_idx, :).';
 
 fig = figure('Name', sprintf('%s Monte Carlo Final Parameter Error', dataset.parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [4 4 22 9]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [4 4 16 7.5]);
 ax = axes(fig);
 boxplot(ax, final_errors, 'Labels', method_labels, 'LabelOrientation', 'inline');
 grid(ax, 'on');
@@ -478,7 +525,10 @@ if nargin < 2
 end
 
 for i = 1:numel(datasets)
-    if strcmpi(char_value(mode), 'MONTECARLO') && isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
+    dataset_mode = mode;
+    if isfield(datasets(i).experiment,'mode'), dataset_mode = char_value(datasets(i).experiment.mode); end
+    if ismember(upper(char_value(dataset_mode)), {'MONTECARLO','INITIALIZATION'}) && ...
+            isfield(datasets(i), 'mc_summary') && ~isempty(datasets(i).mc_summary)
         print_montecarlo_result_table(datasets(i));
     else
         print_example_result_table(datasets(i));
@@ -521,7 +571,13 @@ end
 [cpu_time_runs, cpu_source] = montecarlo_cpu_time_runs(summary, n_methods);
 
 fprintf('\n%s\n', repmat('=', 1, 136));
-fprintf('MONTE CARLO METHOD SUMMARY (%s parametrization)\n', dataset.parametrization);
+study_label = 'MONTE CARLO';
+if (isfield(dataset.study,'type') && strcmpi(char_value(dataset.study.type),'initialization')) || ...
+        (isfield(dataset.experiment,'mode') && strcmpi(char_value(dataset.experiment.mode),'INITIALIZATION'))
+    study_label = 'INITIALIZATION STUDY';
+end
+fprintf('%s METHOD SUMMARY (%s parametrization)\n', study_label, dataset.parametrization);
+fprintf('Source: %s\n', dataset.file);
 fprintf('%s\n', repmat('=', 1, 136));
 fprintf('%-22s %-22s %-6s %-14s %-14s %-14s %-14s %-14s %-14s\n', ...
     'Method', 'Status', 'N valid', 'Param mean', 'Param std', 'RMSE mean', 'RMSE std', 'Wall mean (s)', 'Wall std (s)');
@@ -747,7 +803,7 @@ end
 function fig = plot_final_accuracy_runtime(dataset,method_names,colors)
 % Compare final point estimates and complete attempts, never HMC iterations.
 fig=figure('Name',[dataset.parametrization ' final accuracy and total runtime'], ...
-    'Color','w','Units','centimeters','Position',[2 2 24 10]);
+    'Color','w','Units','centimeters','Position',[2 2 16 8.5]);
 tl=tiledlayout(fig,1,2,'TileSpacing','compact','Padding','compact');
 axes_list=[nexttile(tl),nexttile(tl)];
 for ax=axes_list, hold(ax,'on'); grid(ax,'on'); box(ax,'on'); end
@@ -805,7 +861,7 @@ end
 function fig = plot_metric_summary(dataset, method_names, colors)
 parametrization = dataset.parametrization;
 fig = figure('Name', sprintf('%s Saved Comparison Metrics', parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 22 16.5]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 16 12]);
 tl = tiledlayout(fig, 2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax1 = nexttile(tl);
@@ -828,8 +884,9 @@ plot_metric_axis(ax4, dataset, method_names, colors, 'rmse_hist', 'time');
 title(ax4, 'Output RMSE vs. time');
 ylabel(ax4, 'RMSE');
 
-legend(ax1, 'Location', 'best', 'FontSize', 8);
-title(tl, sprintf('Wiener System Identification: %s Parametrization', parametrization), 'FontWeight', 'bold', 'FontSize', 11);
+lgd = legend(ax1, 'FontSize', 8, 'NumColumns', 3);
+lgd.Layout.Tile = 'south';
+title(tl, sprintf('Wiener System Identification: %s Parametrization', parametrization), 'FontWeight', 'bold', 'FontSize', 9);
 end
 
 function plot_metric_axis(ax, dataset, method_names, colors, field_name, x_mode)
@@ -871,7 +928,7 @@ n_cols = 3;
 n_rows = ceil(n_params / n_cols);
 
 fig = figure('Name', sprintf('%s Parameter Trajectories', dataset.parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 25 6.4 * n_rows]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [3 3 16 5*n_rows+1.5]);
 tl = tiledlayout(fig, n_rows, n_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
 legend_ax = [];
 
@@ -915,7 +972,8 @@ for p = (n_params + 1):(n_rows * n_cols)
 end
 
 if ~isempty(legend_ax)
-    legend(legend_ax, 'Location', 'northwest', 'FontSize', 8);
+    lgd = legend(legend_ax, 'FontSize', 8, 'NumColumns', 3);
+    lgd.Layout.Tile = 'south';
 end
 
 end
@@ -988,9 +1046,9 @@ for m = 1:numel(dataset.results)
 end
 
 n_estimates = numel(estimate_signals);
-fig_height = max(9.5, 2.25 * max(n_estimates, 1) + 1.2);
+fig_height = max(6.5, 1.6 * max(n_estimates, 1) + 1.2);
 fig = figure('Name', sprintf('%s Output Signals', parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 fig_height]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 16 fig_height]);
 
 if n_estimates == 0
     ax = axes(fig);
@@ -1038,15 +1096,15 @@ end
 linkaxes(axes_list, 'x');
 
 fig_error = figure('Name', sprintf('%s Output Errors', parametrization), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
-ax_error = axes(fig_error);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 16 4]);
+ax_error = axes(fig_error, 'Units', 'normalized', 'Position', [.09 .24 .89 .62]);
 hold(ax_error, 'on');
 for idx = 1:n_estimates
     squared_error = (measured_signals{idx} - estimate_signals{idx}).^2;
     squared_error(squared_error == 0) = NaN; % Zero has no position on a log axis.
     plot(ax_error, x, squared_error, ...
         'Color', estimate_colors(idx, :), ...
-        'DisplayName', latex_label(estimate_labels{idx}));
+        'DisplayName', latex_label(strrep(estimate_labels{idx}, ' (Python record)', '')));
 end
 set(ax_error, 'YScale', 'log');
 grid(ax_error, 'on');
@@ -1055,12 +1113,13 @@ xlim(ax_error, [1 n_samples]);
 xlabel(ax_error, 'Sample $t$');
 ylabel(ax_error, '$(c(t)-\hat{c}(t))^2$');
 title(ax_error, sprintf('%s Parametrization: Squared Output Errors', parametrization));
-legend(ax_error, 'Location', 'best', 'FontSize', 8);
+lgd = legend(ax_error, 'Location', 'southeast', 'FontSize', 8, 'NumColumns', 2);
+lgd.ItemTokenSize = [14 8];
 end
 
 function fig = unavailable_output_figure(parametrization, plot_name, message)
 fig = figure('Name', sprintf('%s %s', parametrization, plot_name), ...
-    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 24 9.5]);
+    'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 16 7]);
 ax = axes(fig);
 text(ax, 0.5, 0.5, message, ...
     'HorizontalAlignment', 'center', 'Units', 'normalized');
@@ -1331,13 +1390,18 @@ function name = sanitize_filename(name)
 name = regexprep(name, '[^A-Za-z0-9_-]', '_');
 end
 
-function export_if_requested(fig, fig_dir, filename, export_figures)
+function export_if_requested(fig, fig_dir, filename, export_figures, content_type)
 if ~export_figures
     return;
 end
+if nargin < 5, content_type = 'vector'; end
 if ~exist(fig_dir, 'dir')
     mkdir(fig_dir);
 end
-exportgraphics(fig, fullfile(fig_dir, filename), 'ContentType', 'vector');
+if strcmp(content_type, 'image')
+    exportgraphics(fig, fullfile(fig_dir, filename), 'ContentType', 'image', 'Resolution', 300);
+else
+    exportgraphics(fig, fullfile(fig_dir, filename), 'ContentType', 'vector');
+end
 fprintf('Exported figure: %s\n', fullfile(fig_dir, filename));
 end
