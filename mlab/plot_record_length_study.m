@@ -55,7 +55,7 @@ export_outcomes=export && (~isfield(options,'export_outcomes') || options.export
 folder=fullfile(fileparts(fileparts(mfilename('fullpath'))),'figs');
 if isfield(options,'fig_dir'), folder=options.fig_dir; end
 if export && ~exist(folder,'dir'), mkdir(folder); end
-colors=lines(M); figures=gobjects(0);
+[colors,markers]=record_length_method_styles(names); figures=gobjects(0);
 for c=1:C
     for metric={'bias','rmse'}
         field=metric{1};
@@ -79,11 +79,12 @@ for c=1:C
             end
             for m=1:M
                 y=reshape(bias(c,:,m,p),1,L);
+                marker_size=3+strcmp(markers{m},'^');
                 if strcmp(field,'bias')
                     inside=isfinite(y) & y>=limits(1) & y<=limits(2);
                     visible_y=y; visible_y(~inside)=NaN;
-                    plot(ax,lengths,visible_y,'-o','Color',colors(m,:), ...
-                        'LineWidth',1,'MarkerSize',3,'Tag','bias_curve', ...
+                    plot(ax,lengths,visible_y,'-','Color',colors(m,:),'Marker',markers{m}, ...
+                        'LineWidth',1,'MarkerSize',marker_size,'Tag','bias_curve', ...
                         'UserData',m,'DisplayName',latex_literal(method_figure_label(names{m})));
                     half=1.96*reshape(se(c,:,m,p),1,L);
                     half(~inside)=NaN;
@@ -101,8 +102,9 @@ for c=1:C
                         end
                     end
                 else
-                    plot(ax,lengths,reshape(rmse(c,:,m,p),1,L),'-o', ...
-                        'Color',colors(m,:),'LineWidth',1,'MarkerSize',3, ...
+                    plot(ax,lengths,reshape(rmse(c,:,m,p),1,L),'-', ...
+                        'Color',colors(m,:),'Marker',markers{m},'LineWidth',1, ...
+                        'MarkerSize',marker_size,'Tag','rmse_curve','UserData',m, ...
                         'DisplayName',latex_literal(method_figure_label(names{m})));
                 end
             end
