@@ -66,6 +66,15 @@ independent binomial trials. The same saved BI-HMC reference is displayed
 under both parametrizations and does not constitute an additional set of
 independent Bayesian experiments.
 
+For the independent comparisons, descriptive wins, losses, and ties count
+the signs of all cross-sample differences $D_{ij}=E_{a,i}-E_{b,j}$.
+The reported median is $\operatorname{median}_{i,j}D_{ij}$, the two-sample
+Hodges--Lehmann estimate. Both summaries are invariant to the ordering of
+the runs. This median differs from a median of matched-record differences
+and need not equal the difference of the two sample medians; it is used
+here as a descriptive effect size, without assuming a common-shape
+location model.
+
 All pairwise hypotheses were tested once, two-sided, and corrected jointly
 within each benchmark--parametrization case using Holm's procedure at
 $\alpha=0.05$~\cite{Holm1979}. Paired and independent tests belong to the
@@ -195,7 +204,7 @@ Each entry counts significantly better:worse outcomes against other methods, usi
 \begin{table}[!htbp]
 \centering
 \small
-\caption{Selected paired exact sign tests, including inconclusive contrasts. The first-listed method is $a$; $D_r=E_{a,r}-E_{b,r}$. Bold $p_{\rm H}$ values reject equal win frequencies. All unlisted contrasts appear in the matrices.}
+\caption{Selected paired exact sign tests and independent rank-sum tests ($\dagger$), including inconclusive contrasts. The first-listed method is $a$. Bold $p_{\rm H}$ values reject equal win frequencies (sign test) or equal error distributions (rank-sum test). All unlisted contrasts appear in Figs.~\ref{fig:expstats_wins_example_1_montecarlo_fsm}--\ref{fig:expstats_wins_example_cstr_montecarlo_pl}.}
 \label{tab:expstats_paired}
 \setlength{\tabcolsep}{5pt}
 \renewcommand{\arraystretch}{1.12}
@@ -206,6 +215,14 @@ Case & Methods $a$ / $b$ & $W:L:T$ & $p_{\rm H}$ & Median $D$ (pp) \\
 Example 1/FSM & BI-HMC / Newton & 20:10:0 & $1$ & $-0.224$ \\
 Example 1/PL & GHAM-2-I / WS-GGI & 28:2:0 & $\mathbf{3.91\times10^{-5}}$ & $-0.692$ \\
 Example 1/PL & LHAM-1-TIK / WS-GGI & 25:5:0 & $\mathbf{0.014}$ & $-0.607$ \\
+Example 1/PL & BI-HMC$^\dagger$ / RLS & 673:227:0 & $\mathbf{0.0421}$ & $-0.526$ \\
+Example 1/PL & BI-HMC$^\dagger$ / WS-GNI & 673:227:0 & $\mathbf{0.0421}$ & $-0.526$ \\
+Example 1/PL & BI-HMC$^\dagger$ / WS-GGI & 774:126:0 & $\mathbf{7.61\times10^{-5}}$ & $-0.879$ \\
+Example 1/PL & BI-HMC$^\dagger$ / GHAM-1-dH & 673:227:0 & $\mathbf{0.0421}$ & $-0.526$ \\
+Example 1/PL & BI-HMC$^\dagger$ / GHAM-2-dH & 673:227:0 & $\mathbf{0.0421}$ & $-0.526$ \\
+Example 1/PL & BI-HMC$^\dagger$ / GHAM-2-I & 585:315:0 & $1$ & $-0.249$ \\
+Example 1/PL & BI-HMC$^\dagger$ / LHAM-1-TIK & 605:295:0 & $0.738$ & $-0.360$ \\
+Example 1/PL & BI-HMC$^\dagger$ / LHAM-3-TIK & 641:259:0 & $0.185$ & $-0.538$ \\
 CSTR/FSM & BI-HMC / Newton & 29:1:0 & $\mathbf{1.79\times10^{-6}}$ & $-0.449$ \\
 CSTR/FSM & LHAM-1-TIK / GI & 29:1:0 & $\mathbf{1.79\times10^{-6}}$ & $-0.00499$ \\
 CSTR/FSM & LHAM-3-TIK / GI & 29:1:0 & $\mathbf{1.79\times10^{-6}}$ & $-0.00471$ \\
@@ -214,11 +231,19 @@ CSTR/FSM & LHAM-3-TIK / Newton & 11:19:0 & $0.401$ & $1.14\times10^{-4}$ \\
 CSTR/FSM & LHAM-1-TIK / LHAM-3-TIK & 23:7:0 & $\mathbf{0.0157}$ & $-1.97\times10^{-4}$ \\
 CSTR/PL & LHAM-3-TIK / LHAM-1-TIK & 27:3:0 & $\mathbf{1.69\times10^{-4}}$ & $-0.987$ \\
 CSTR/PL & WS-GGI / GHAM-2-I & 30:0:0 & $\mathbf{6.33\times10^{-8}}$ & $-5.34$ \\
+CSTR/PL & BI-HMC$^\dagger$ / RLS & 588:312:0 & $0.421$ & $-0.321$ \\
+CSTR/PL & BI-HMC$^\dagger$ / WS-GNI & 588:312:0 & $0.421$ & $-0.321$ \\
+CSTR/PL & BI-HMC$^\dagger$ / WS-GGI & 900:0:0 & $\mathbf{1.09\times10^{-9}}$ & $-17.2$ \\
+CSTR/PL & BI-HMC$^\dagger$ / GHAM-1-dH & 588:312:0 & $0.421$ & $-0.321$ \\
+CSTR/PL & BI-HMC$^\dagger$ / GHAM-2-dH & 588:312:0 & $0.421$ & $-0.321$ \\
+CSTR/PL & BI-HMC$^\dagger$ / GHAM-2-I & 900:0:0 & $\mathbf{1.09\times10^{-9}}$ & $-22.6$ \\
+CSTR/PL & BI-HMC$^\dagger$ / LHAM-1-TIK & 797:103:0 & $\mathbf{6.32\times10^{-6}}$ & $-1.37$ \\
+CSTR/PL & BI-HMC$^\dagger$ / LHAM-3-TIK & 635:265:0 & $0.0957$ & $-0.535$ \\
 \bottomrule
 \end{tabular}
 \par\smallskip
 \begin{minipage}{\linewidth}\footnotesize
-All rows contain 30 jointly valid records. Negative median differences favor the first method; pp denotes percentage points of relative parameter error. Effect sizes are descriptive and do not turn the sign test into a test of means.
+Unmarked rows use 30 matched records: $W:L:T$ counts same-record wins:losses:ties and the median is $\operatorname{median}_r(E_{a,r}-E_{b,r})$. $\dagger$~Independent BI-HMC/PL rows use 30 estimates per method: counts summarize all $30\times30=900$ cross-sample differences and the median is $\operatorname{median}_{i,j}(E_{a,i}-E_{b,j})$. These 900 comparisons are dependent descriptive quantities, not 900 independent runs; their $p_{\rm H}$ values remain those of the independent rank-sum tests. Negative medians favor the first method; pp denotes percentage points of relative parameter error. Effect sizes do not turn either test into a test of means.
 \end{minipage}
 \end{table}
 \begin{table}[!htbp]

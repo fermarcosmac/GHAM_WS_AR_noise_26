@@ -51,17 +51,28 @@ sigma_nu = settings.sigma_nu;
 burn_in = settings.burn_in;
 enforce_fixed_iterations = get_optional_field(settings, 'enforce_fixed_iterations', strcmp(mode, 'MONTECARLO'));
 
-%% 3. Generate input / noise / true output
-rng(seed);
+%% 3. Load or generate input / noise / true output
 data_runs = get_optional_field(options, 'data_runs', {});
+initializations = get_optional_field(options, 'initializations', []);
+library_file = get_optional_field(options, 'python_record_library', '');
+replay = [];
+if strlength(string(library_file)) > 0
+    assert(isempty(data_runs) && isempty(initializations), ...
+        'comparison:PythonRecords', 'A Python record library cannot be combined with explicit data or starts.');
+    [data_runs, replay] = load_python_record_library(library_file, experiment_name, mode, ...
+        seed, N_MC, lambda_g, burn_in, sigma_nu, [na nb nf nd], theta_true);
+    if strcmp(mode,'INITIALIZATION'), initializations = replay.initializations; end
+else
+    rng(seed);
+end
 if ~isempty(data_runs)
-    assert(numel(data_runs)==N_MC || strcmp(mode,'EXAMPLE'), 'data_runs must match N_MC.');
+    assert(numel(data_runs)==N_MC || strcmp(mode,'EXAMPLE') || ...
+        (strcmp(mode,'INITIALIZATION') && isscalar(data_runs)), 'data_runs must match the study.');
     r = data_runs{1}.r(:); nu = data_runs{1}.nu(:); c = data_runs{1}.c(:);
     assert(numel(r)==lambda_g && numel(c)==lambda_g && numel(nu)==lambda_g, 'Wrong data length.');
 else
     [r, nu, c] = generate_experiment_data(theta_true, na, nb, nf, nd, lambda_g, burn_in, sigma_nu);
 end
-initializations = get_optional_field(options, 'initializations', []);
 if strcmp(mode,'INITIALIZATION')
     assert(isequal(size(initializations),[n N_MC]), 'initializations must be n_params by N_MC.');
     experiment_cfg.initialization = struct('policy','consistent','theta0',initializations(:,1));
@@ -124,10 +135,15 @@ end
 end
 
 %% 7. Plots
+example_data = struct('r', r, 'nu', nu, 'c', c);
+if ~isempty(replay)
+    example_data.input_prehistory = data_runs{1}.input_prehistory;
+    example_data.noise_burn_in = burn_in;
+end
 payload = save_comparison_results(results_file, results, selected_methods, ...
     na, nb, nf, nd, theta_true, param_names, param_labels, ...
     lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, ...
-    experiment_name, mode, seed, N_MC, struct('r', r, 'nu', nu, 'c', c), mc_summary, mc_runs, experiment_cfg, ...
+    experiment_name, mode, seed, N_MC, example_data, mc_summary, mc_runs, experiment_cfg, replay, ...
     get_optional_field(options,'save_results',true));
 
 if make_local_plots
@@ -142,6 +158,58 @@ end
 end
 
 %% Local functions
+function [records, replay] = load_python_record_library(file, name, mode, seed, count, ...
+        record_length, burn_in, sigma_nu, dims, theta_true)
+id = 'comparison:PythonRecords';
+assert(isfile(file), id, 'Python record library not found: %s', file);
+bank = load(file);
+assert(bank.schema_version==1 && ismember(mode,{'MONTECARLO','INITIALIZATION'}), ...
+    id, 'Unsupported Python record library version or study.');
+e = bank.experiment;
+assert(strcmp(e.name,name) && strcmp(e.mode,mode) && ...
+    isequal([double(e.seed) double(e.N_MC) double(e.lambda_g) double(e.burn_in) double(e.sigma_nu)], ...
+            [seed count record_length burn_in sigma_nu]) && ...
+    isequal(double([e.dims.na e.dims.nb e.dims.nf e.dims.nd]),dims) && ...
+    isequal(e.theta_true(:),theta_true(:)), id, ...
+    'Python record library does not match the benchmark, study, or data settings: %s', file);
+
+fixed_record = strcmp(mode,'INITIALIZATION');
+num_records = count;
+expected_seeds = seed+(0:count-1);
+if fixed_record
+    num_records = 1;
+    expected_seeds = repmat(seed,1,count);
+end
+ids = string(bank.dataset_ids(:));
+assert(isequal(double(bank.data_seeds(:).'),expected_seeds) && numel(ids)==count && ...
+    numel(unique(ids))==num_records, id, 'Python record IDs or seeds do not match the study.');
+for field = {'r','nu','c','input_prehistory'}
+    key = field{1}; values = bank.(key);
+    expected_length = record_length;
+    if strcmp(key,'input_prehistory'), expected_length = burn_in; end
+    assert(isa(values,'double') && isreal(values) && all(isfinite(values),'all') && ...
+        isequal(size(values),[expected_length num_records]), id, 'Invalid Python signal array: %s.', key);
+end
+records = cell(num_records,1);
+for k = 1:num_records
+    r = bank.r(:,k); nu = bank.nu(:,k); c = bank.c(:,k);
+    prehistory = bank.input_prehistory(:,k);
+    assert(strcmp(hash_values([r;c]),ids(k)) && ...
+        strcmp(hash_values(nu),bank.innovation_sha256{k}) && ...
+        strcmp(hash_values(prehistory),bank.input_history_sha256{k}), ...
+        id, 'Python record library checksum mismatch at record %d.', k);
+    records{k} = struct('r',r,'nu',nu,'c',c,'input_prehistory',prehistory);
+end
+replay = struct('library_file',char(file),'source_fsm_file',bank.source_fsm_file, ...
+    'source_generated_at',bank.source_generated_at,'dataset_ids',{cellstr(ids)});
+if fixed_record
+    assert(isequal(size(bank.initializations),[numel(theta_true) count]) && ...
+        all(isfinite(bank.initializations),'all'), id, 'Invalid Python starting points.');
+    replay.initializations = bank.initializations;
+    replay.initialization_seed = bank.initialization_seed;
+end
+end
+
 function results = run_method_set(selected_methods, method_configs, r, nu, c, theta_true, na, nb, nf, nd, lambda_g, K_max, conv_threshold, enforce_fixed_iterations, verbose, experiment_cfg, metadata, progress_callback)
 results = [];
 best_error_so_far = Inf;
@@ -1009,7 +1077,7 @@ labels = [arrayfun(@(i) sprintf('a_%d', i), 1:na, 'UniformOutput', false), ...
           arrayfun(@(i) sprintf('d_%d', i), 1:nd, 'UniformOutput', false)];
 end
 
-function payload = save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, experiment_name, mode, seed, N_MC, example_data, mc_summary, all_runs, resolved_experiment, save_results)
+function payload = save_comparison_results(output_file, results_in, selected_methods, na, nb, nf, nd, theta_true, param_names, param_labels, lambda_g, K_max, conv_threshold, sigma_nu, burn_in, enforce_fixed_iterations, experiment_name, mode, seed, N_MC, example_data, mc_summary, all_runs, resolved_experiment, replay, save_results)
 out_dir = fileparts(output_file);
 if save_results && ~isempty(out_dir) && ~exist(out_dir, 'dir')
     mkdir(out_dir);
@@ -1040,6 +1108,7 @@ resolved_experiment_json = jsonencode(resolved_experiment);
 payload = struct('parametrization',parametrization,'generated_at',generated_at, ...
     'experiment',experiment,'results',results,'example_data',example_data,'mc_summary',mc_summary, ...
     'all_runs',{all_runs},'schema_version',schema_version,'resolved_experiment_json',resolved_experiment_json);
+if ~isempty(replay), payload.shared_python_records = replay; end
 if save_results
     save(output_file,'-struct','payload','-v7');
     fprintf('\nSaved PL results to: %s\n', output_file);

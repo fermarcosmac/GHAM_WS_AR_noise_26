@@ -53,8 +53,7 @@ fig = figure('Name',[dataset.parametrization ' optimization diagnostics'], ...
     'DefaultAxesFontSize',8,'DefaultTextFontSize',9);
 figures = fig;
 tl = tiledlayout(fig,2,3,'TileSpacing','compact','Padding','compact');
-title(tl,{[dataset.parametrization ': method comparison'], ...
-    'Finite medians and interquartile bands'},'Interpreter','none','Color','k','FontSize',9);
+title(tl,fig.Name,'Interpreter','none','Color','k','FontSize',9);
 axes_list = gobjects(1,6);
 for k = 1:6
     axes_list(k) = nexttile(tl);

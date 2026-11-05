@@ -124,4 +124,24 @@ assert(pairs.Test=="independent_rank_sum" && isnan(pairs.ValidPairs));
 assert(abs(pairs.RawP-ranksum([1 2 3],[.1 .2]))<1e-12);
 assert(pairs.ValidA==3 && pairs.ValidB==2 && isnan(pairs.CILower));
 assert(all(trials.Outcome=="unpaired_sample_columns"));
+
+% Replayed data enable the paired test only when the donor hashes agree.
+t.shared_python_records=struct('dataset_ids',{{'pl_1','pl_2','pl_3'}});
+for r=1:3
+    s.all_runs{r}.run_metadata.dataset_id=t.all_runs{r}.run_metadata.dataset_id;
+end
+replayed=include_shared_bi_hmc(t,'',struct('bi_hmc_source',s));
+[pairs,trials,info]=pairwise_parameter_error_wins(replayed,struct('expected_runs',3));
+assert(info.PairingCheck=="metadata_validated" && pairs.Test=="paired_exact_sign");
+assert(pairs.ValidPairs==2 && pairs.WinsB==2 && pairs.RawP==.5);
+assert(isequal(trials.Outcome,["B_win";"B_win";"B_invalid"]));
+
+replayed.all_runs{2}(2).run_metadata.dataset_id='different_record';
+failed=false;
+try
+    pairwise_parameter_error_wins(replayed,struct('expected_runs',3));
+catch exc
+    failed=contains(exc.message,'do not share a data realization');
+end
+assert(failed,'Mismatched replay was accepted.');
 end

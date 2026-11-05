@@ -6,7 +6,7 @@
 
 repo_root = pwd; % call from repo root!
 addpath([repo_root '\mlab']);
-experiment_name = 'example_1'; % 'example_1' or 'example_CSTR'
+experiment_name = 'example_CSTR'; % 'example_1' or 'example_CSTR'
 base_cfg = jsondecode(fileread(fullfile(repo_root,'configs',[experiment_name '.json'])));
 results_dir = fullfile(repo_root,'results',experiment_name);
 fig_dir = fullfile(repo_root,'figs');
@@ -21,11 +21,11 @@ python_executable = 'python'; % Or the full path to your Python environment.
 % payload = comparison(cfg,struct('experiment_name',experiment_name, ...
 %     'make_local_plots',true));
 
-%% PL comparison: Monte Carlo input/noise realizations, fixed method starts
+%% PL comparison: replay the original Python Monte Carlo records
 % cfg = base_cfg;
 % cfg.mode = 'MONTECARLO';
-% cfg.N_MC = 30; % Number of independent data records.
 % payload = comparison(cfg,struct('experiment_name',experiment_name, ...
+%     'python_record_library',fullfile(results_dir,'shared_python_montecarlo.mat'), ...
 %     'make_local_plots',false));
 
 %% Small PL comparison with explicit shared initialization and local output
@@ -40,9 +40,9 @@ python_executable = 'python'; % Or the full path to your Python environment.
 %     'output_file',fullfile(local_results_dir,'comparison_pl_short.mat'), ...
 %     'make_local_plots',false,'verbose',false));
 
-%% PL initialization sensitivity: fixed data, random starts, all optimizers
-% Uses initialization_study in configs/studies.json; progress is on by default.
-payload = initialization_study(experiment_name);
+%% PL initialization sensitivity: replay the original Python record and starts
+payload = initialization_study(experiment_name,struct( ...
+    'python_record_library',fullfile(results_dir,'shared_python_initialization.mat')));
 
 %% PL initialization sensitivity: override trial count/budget and save locally
 % options = struct('experiment_cfg',base_cfg, ...

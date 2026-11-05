@@ -59,7 +59,7 @@
   "PairingCheck": "metadata_validated",
   "ConfidenceIntervals": "unadjusted exact binomial for paired tests only; independent reference CIs omitted",
   "SharedReferenceMethods": [],
-  "Tests": "paired exact sign within original dataset; independent rank-sum against reused Python reference",
+  "Tests": "paired exact sign on matching records; independent rank-sum for legacy unmatched references",
   "SourceFile": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_CSTR\\comparison_fsm_montecarlo.mat",
   "SourceGeneratedAt": "2026-11-02T12:01:18"
 }

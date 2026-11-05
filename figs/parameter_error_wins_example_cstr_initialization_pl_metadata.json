@@ -33,13 +33,13 @@
   ],
   "FiniteCounts": [
     30,
-    14,
-    16,
-    30,
+    13,
+    15,
     30,
     28,
+    27,
     0,
-    28,
+    30,
     30,
     30
   ],
@@ -59,8 +59,8 @@
   "PairingCheck": "metadata_validated",
   "ConfidenceIntervals": "unadjusted exact binomial for paired tests only; independent reference CIs omitted",
   "SharedReferenceMethods": "BI_HMC",
-  "Tests": "paired exact sign within original dataset; independent rank-sum against reused Python reference",
+  "Tests": "paired exact sign on matching records; independent rank-sum for legacy unmatched references",
   "SourceFile": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_CSTR\\initialization_pl.mat",
-  "SourceGeneratedAt": "2026-11-02T14:23:57",
+  "SourceGeneratedAt": "2026-11-05T17:36:16",
   "SharedReferenceSource": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_CSTR\\initialization_fsm.mat"
 }

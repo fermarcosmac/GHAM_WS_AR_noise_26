@@ -8,6 +8,7 @@
   "AbsoluteTieTolerance": 0,
   "Runs": 30,
   "MethodNames": [
+    "BI_HMC",
     "RGLS",
     "WS-GNI",
     "WS-GGI",
@@ -16,10 +17,10 @@
     "WS-GGHAM-2-H",
     "WS-GGHAM-2-I",
     "WS-LGHAM-1-TIK",
-    "WS-LGHAM-3-TIK",
-    "BI_HMC"
+    "WS-LGHAM-3-TIK"
   ],
   "MethodLabels": [
+    "BI-HMC",
     "RLS",
     "WS-GNI",
     "WS-GGI",
@@ -28,8 +29,7 @@
     "GHAM-2-H",
     "GHAM-2-I",
     "LHAM-1-TIK",
-    "LHAM-3-TIK",
-    "BI-HMC"
+    "LHAM-3-TIK"
   ],
   "FiniteCounts": [
     30,
@@ -37,8 +37,8 @@
     30,
     30,
     30,
-    0,
     30,
+    0,
     30,
     30,
     30
@@ -49,8 +49,8 @@
     false,
     false,
     false,
-    true,
     false,
+    true,
     false,
     false,
     false
@@ -59,8 +59,8 @@
   "PairingCheck": "metadata_validated",
   "ConfidenceIntervals": "unadjusted exact binomial for paired tests only; independent reference CIs omitted",
   "SharedReferenceMethods": "BI_HMC",
-  "Tests": "paired exact sign within original dataset; independent rank-sum against reused Python reference",
+  "Tests": "paired exact sign on matching records; independent rank-sum for legacy unmatched references",
   "SourceFile": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_CSTR\\comparison_pl_montecarlo.mat",
-  "SourceGeneratedAt": "2026-10-14T16:05:15",
+  "SourceGeneratedAt": "2026-11-05T17:30:46",
   "SharedReferenceSource": "C:\\Users\\ferma\\PhD\\GHAM_WS_AR_noise_26\\mlab\\..\\results\\example_CSTR\\comparison_fsm_montecarlo.mat"
 }

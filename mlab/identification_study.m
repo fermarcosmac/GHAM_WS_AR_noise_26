@@ -27,11 +27,22 @@ switch kind
         progress = study_progress('PL initialization',cfg.selected_methods,R,cfg.settings.lambda_g,1,study);
         progress.stage('Preparing stable starts and the fixed data record');
         if progress.enabled, base_options.progress_callback = progress.callback; end
-        starts = draw_starts(study,sys,center);
         cfg.mode = 'INITIALIZATION';
         cfg.seed = field_or(study,'data_seed',field_or(cfg,'seed',42));
-        base_options.initializations = starts;
+        library_file = field_or(options,'python_record_library','');
+        if strlength(string(library_file)) > 0
+            base_options.python_record_library = library_file;
+        else
+            base_options.initializations = draw_starts(study,sys,center);
+        end
+        base_options.save_results = false;
         payload = comparison(cfg,base_options);
+        if isfield(payload,'shared_python_records')
+            starts = payload.shared_python_records.initializations;
+            study.initialization_seed = payload.shared_python_records.initialization_seed;
+        else
+            starts = base_options.initializations;
+        end
         study.type = 'initialization'; study.randomized_variable = 'parameter_initialization';
         study.data_seed = cfg.seed; study.initializations = starts;
         payload.study = study;

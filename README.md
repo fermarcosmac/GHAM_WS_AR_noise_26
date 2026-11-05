@@ -147,6 +147,30 @@ MATLAB `comparison(cfg, options)` supports:
 | `save_results` | Set false to return the payload without writing it. |
 | `data_runs` | Supply records as cells of structs containing `r`, `nu`, and `c`, matched to the repetition count. |
 | `initializations` | Parameter-by-trial bank for `INITIALIZATION` mode; normally managed by the study wrapper. |
+| `python_record_library` | Path to a verified Python replay MAT file for the Monte Carlo comparison or initialization study. |
+
+To compare the saved Python BI-HMC estimates with PL on the same trials, use
+the Python replay sections in [mlab/entry.m](mlab/entry.m). Select
+`example_1` or `example_CSTR` in the setup and run the Monte Carlo and
+initialization sections. The libraries in the benchmark results folders
+contain the original input, innovations, and measured output. The initialization
+library also supplies the original 30 starting points in their saved order.
+Use the published record settings and repetition count. Each section writes
+the usual PL result file for the statistics plotting call.
+
+To rebuild the libraries from the saved Python/FSM results, run this command
+in the original Python environment (PyTorch 2.8.0 for these results):
+
+```text
+python python/export_shared_python_records.py
+```
+
+The exporter replays data generation for the Monte Carlo records and checks
+each input/output and input prehistory hash against the saved Python runs.
+It also checks the innovations by reproducing the archived BI-HMC output
+traces from the saved estimates.
+It extracts the initialization records directly from the result files.
+The export requires only signal generation and evaluation of saved estimates.
 
 ### Python comparison: configured run or exact method subset
 
@@ -704,13 +728,13 @@ Python MAT file; otherwise the plotter discovers the sibling `_fsm` file.
 not additional independent trials. The direct noise/record-length helpers accept
 the same options, including when given a loaded payload.
 
-Equal MATLAB/Python seeds do not give identical records. Cross-source BI_HMC
-comparisons therefore use independent two-sided Wilcoxon rank-sum tests, while
-the original PL optimizer pairs retain their paired exact sign tests. Holm
-adjustment covers the combined family. Cells marked `RS` show cross-sample
-win probabilities and rank-sum p-values; paired binomial confidence intervals
-are not assigned to those cells. Imported output plots retain the Python
-record and its saved reconstruction, labeled `Python record`.
+PL runs made with `python_record_library` use paired exact sign tests for
+BI_HMC as well as the optimizer pairs. The statistics code checks the saved
+run hashes and, for initialization, the starting points. Legacy PL results
+generated on separate records still use the independent Wilcoxon rank-sum
+test for BI_HMC, marked `RS` in the matrices. Holm adjustment covers the
+full family in each case. Imported output plots retain the Python record
+and its saved reconstruction, labeled `Python record`.
 
 The lower-level helpers are also callable:
 

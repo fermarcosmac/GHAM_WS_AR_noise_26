@@ -20,7 +20,7 @@ if nargin < 1, options = struct(); end
 
 script_dir = fileparts(mfilename('fullpath'));
 repo_root = fullfile(script_dir, '..');
-experiment_name = 'example_1';
+experiment_name = 'example_CSTR';
 mode = 'MONTECARLO';  % EXAMPLE, MONTECARLO, or INITIALIZATION
 show_figures = true; % Set true to display the figures while plotting
 experiment_name = char_value(get_option(options,'experiment_name',experiment_name));
@@ -215,6 +215,8 @@ ds.experiment = loaded.experiment;
 ds.study = struct();
 ds.shared_bi_hmc = struct();
 if isfield(loaded,'shared_bi_hmc'), ds.shared_bi_hmc=loaded.shared_bi_hmc; end
+ds.shared_python_records = [];
+if isfield(loaded,'shared_python_records'), ds.shared_python_records=loaded.shared_python_records; end
 ds.win_comparisons = table();
 ds.win_metadata = struct();
 ds.normality_tests = table();

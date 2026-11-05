@@ -3,7 +3,7 @@ function [pairs, trials, info] = pairwise_parameter_error_wins(dataset, options)
 % One family = one study, benchmark, and parametrization. No outlier filtering.
 % Win probabilities and their exact 95% CIs condition on valid, non-tied pairs;
 % the CIs are descriptive (unadjusted), while decisions use Holm-adjusted p.
-% Reused Python references on different records use independent rank-sum tests.
+% Verified Python replay uses paired tests. Legacy unpaired files use rank-sum.
 if nargin < 2, options = struct(); end
 alpha = opt(options,'alpha',0.05);
 tie_ulps = opt(options,'tie_ulps',10);
@@ -54,7 +54,13 @@ parametrization = string(dataset.parametrization);
 shared=false(M,1);
 if isfield(summary,'shared_reference_methods'), shared=logical(summary.shared_reference_methods(:)); end
 assert(numel(shared)==M,'Shared-reference flags must match methods.');
-pairing = check_pairing(dataset,names(~shared),R,study);
+replayed = isfield(dataset,'shared_python_records') && ~isempty(dataset.shared_python_records);
+unpaired_reference = shared & ~replayed;
+pairing = check_pairing(dataset,names(~unpaired_reference),R,study);
+if replayed
+    assert(pairing=="metadata_validated", 'pairwise_parameter_error_wins:ReplayPairing', ...
+        'Python replay requires complete matching run metadata.');
+end
 labels = names;
 if isfield(options,'method_labels')
     labels = string(options.method_labels(:));
@@ -93,7 +99,7 @@ for ia = 1:numel(active)
             'RawP',p,'AdjustedP',NaN,'Significant',false,'Winner',"", ...
             'Conclusion',conclusion,'PairingCheck',pairing,'Test',"paired_exact_sign", ...
             'ValidA',sum(valid(a,:)),'ValidB',sum(valid(b,:)));
-        unpaired=shared(a) || shared(b);
+        unpaired=unpaired_reference(a) || unpaired_reference(b);
         if unpaired
             % MATLAB/Python seeds do not imply identical measured records.
             % Use all valid independent samples; never pair them by column.
@@ -165,7 +171,7 @@ info = struct('Benchmark',benchmark,'Study',study,'Parametrization',parametrizat
     'Skipped',skipped,'FamilySize',height(pairs),'PairingCheck',pairing, ...
     'ConfidenceIntervals',"unadjusted exact binomial for paired tests only; independent reference CIs omitted", ...
     'SharedReferenceMethods',names(shared), ...
-    'Tests',"paired exact sign within original dataset; independent rank-sum against reused Python reference");
+    'Tests',"paired exact sign on matching records; independent rank-sum for legacy unmatched references");
 if isfield(dataset,'file'), info.SourceFile = string(dataset.file); end
 if isfield(dataset,'generated_at'), info.SourceGeneratedAt = string(dataset.generated_at); end
 if isfield(dataset,'shared_bi_hmc') && isfield(dataset.shared_bi_hmc,'source_file')
@@ -230,6 +236,11 @@ for r = 1:R
         end
     end
     ids(r)=reference_id;
+end
+if isfield(dataset,'shared_python_records') && ~isempty(dataset.shared_python_records)
+    expected = string(dataset.shared_python_records.dataset_ids(:));
+    assert(isequal(ids,expected), 'pairwise_parameter_error_wins:ReplayPairing', ...
+        'Run hashes do not match the verified Python record library.');
 end
 if complete
     if study=="montecarlo"
