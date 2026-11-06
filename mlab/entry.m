@@ -1,12 +1,13 @@
 %% MATLAB experiment and plotting entry point
-% Run this setup once, then uncomment the desired block and run its section.
+% Run the setup for your benchmark, then run only the desired section.
+% Commented examples can be uncommented before running their sections.
 % Full settings: configs/<experiment_name>.json, configs/studies.json, and
 % mlab/optim_configs.json. Standard calls overwrite their matching output files.
 % Use the local-output examples for disposable runs. See README.md for details.
 
 repo_root = pwd; % call from repo root!
 addpath([repo_root '\mlab']);
-experiment_name = 'example_CSTR'; % 'example_1' or 'example_CSTR'
+experiment_name = 'example_1'; % 'example_1' or 'example_CSTR'
 base_cfg = jsondecode(fileread(fullfile(repo_root,'configs',[experiment_name '.json'])));
 results_dir = fullfile(repo_root,'results',experiment_name);
 fig_dir = fullfile(repo_root,'figs');
@@ -22,11 +23,11 @@ python_executable = 'python'; % Or the full path to your Python environment.
 %     'make_local_plots',true));
 
 %% PL comparison: replay the original Python Monte Carlo records
-% cfg = base_cfg;
-% cfg.mode = 'MONTECARLO';
-% payload = comparison(cfg,struct('experiment_name',experiment_name, ...
-%     'python_record_library',fullfile(results_dir,'shared_python_montecarlo.mat'), ...
-%     'make_local_plots',false));
+cfg = base_cfg;
+cfg.mode = 'MONTECARLO';
+payload = comparison(cfg,struct('experiment_name',experiment_name, ...
+    'python_record_library',fullfile(results_dir,'shared_python_montecarlo.mat'), ...
+    'make_local_plots',false));
 
 %% Small PL comparison with explicit shared initialization and local output
 % The supplied benchmarks have six parameters in [a, b, f2..., d] order.
