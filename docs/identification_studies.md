@@ -319,10 +319,9 @@ python python/noise_study.py --experiment example_1
 
 Both benchmarks are supported. Configure `noise_study` in `configs/studies.json`:
 
-- `sigma_nu_values`: innovation standard deviations, default `[0.05, 0.1, 0.2, 0.5, 1.0]`.
+- `sigma_nu_values`: innovation standard deviations, default `[0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0]`.
   Values must be finite, nonnegative, unique, and increasing; zero noise is allowed.
-- `n_runs`: runs **per optimizer and noise level**, default 1. Increase this
-  for independent data realizations at each level.
+- `n_runs`: independent data realizations **per method and noise level**, default 10.
 - `data_seed`: stream seeds start here and increase by one per realization.
 - `theta0`: fixed common parameter start; `null` uses the nominal unit-delay start.
 - `K_max`: optional iteration-budget override; record length comes from the benchmark.
@@ -362,7 +361,7 @@ statuses remain visible. Bias intervals describe Monte Carlo uncertainty of the
 mean parameter error, conditional on the selected population. Matched levels are
 correlated; no independent-level significance test is claimed.
 
-By default, `noise_<pl|fsm>_sigma01.mat` through `_sigma05.mat` retain full
+By default, `noise_<pl|fsm>_sigma01.mat` through `_sigma07.mat` retain full
 comparison payloads, including every trial's histories, data IDs, initialization,
 diagnostics, and per-run noise-level metadata. Indices follow `sigma_nu_values`;
 the second default file uses 0.1. Custom output filenames supply the corresponding
@@ -378,17 +377,22 @@ plot_comparison_results(struct('study','noise','experiment_name','example_1', ..
 This reads `noise_pl.mat` and `noise_fsm.mat`. Each backend has a figure of final
 relative parameter error versus innovation standard deviation, with one panel
 per optimizer, and a figure of final parameter estimates with dashed true-value
-references. The default single run shows points and curves without MC intervals.
-With repeated runs, plots show means and pointwise approximate 95% MC intervals
-only where at least two estimates are retained. Overall error averages the
-per-run relative norms, `100*norm(theta_hat-theta_true)/norm(theta_true)`.
+references. Parameter-error curves show the mean plus or minus one sample
+standard deviation across the retained per-run relative errors,
+`100*norm(theta_hat-theta_true)/norm(theta_true)`. The standard deviation uses
+the `n-1` denominator and describes run-to-run dispersion. Parameter-estimate
+plots retain pointwise approximate 95% Monte Carlo intervals for their means.
+Both displays require at least two retained runs for error bars. Older single-run
+files remain usable and show individual errors without bars.
 The configured summary population is respected; failed/skipped estimates are
 excluded and retained counts are shown where fits are missing.
 
 Exports are `noise_error_<experiment>_<pl|fsm>.pdf`,
 `noise_estimates_<experiment>_<pl|fsm>.pdf`, and
 `noise_summary_<experiment>_<pl|fsm>.csv`. The CSV includes retained counts and
-optimization outcomes at each level. Direct use is
+optimization outcomes at each level. `StdRelativeErrorPct` stores the sample
+standard deviation used for the parameter-error bars. Existing `MCSE`, `CILow`,
+and `CIHigh` columns remain available for mean-uncertainty analysis. Direct use is
 `[figures, report] = plot_noise_study(payload_or_filename, options)`.
 
 Plot individual levels using the comparison plotter with explicit files:

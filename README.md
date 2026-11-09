@@ -353,9 +353,9 @@ estimates** across starts, with true-value reference lines, using the commands i
 ## Noise sensitivity
 
 The `noise_study` block in [configs/studies.json](configs/studies.json) tests
-innovation standard deviations **[0.05, 0.1, 0.2, 0.5, 1.0]**, with the nominal
-0.1 second. Innovation power is the square of each value. Each optimizer runs
-once per level by default (`n_runs: 1`), using a fixed common `theta0` (`null` uses
+innovation standard deviations **[0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0]**, with the nominal
+0.1 second. Innovation power is the square of each value. Each method runs
+10 times per level by default (`n_runs: 10`), using a fixed common `theta0` (`null` uses
 the nominal `b1 = 1` start), and the benchmark's record length and optimizer
 settings. An optional `K_max` overrides the iteration budget.
 
@@ -366,13 +366,13 @@ noise_study('example_1');
 cfg = jsondecode(fileread('configs/example_1.json'));
 cfg.settings.lambda_g = 256;
 noise_study('example_1',struct('experiment_cfg',cfg, ...
-    'study',struct('n_runs',1,'K_max',10), ...
+    'study',struct('n_runs',10,'K_max',10), ...
     'output_file',fullfile(pwd,'results','local','noise_pl.mat')));
 ```
 
 ```text
 python python/noise_study.py --experiment example_1
-python python/noise_study.py --experiment example_1 --runs 1 --iterations 10 --cpu --output results/local/noise_fsm.mat
+python python/noise_study.py --experiment example_1 --runs 10 --iterations 10 --cpu --output results/local/noise_fsm.mat
 python python/noise_study.py --help
 ```
 
@@ -385,7 +385,7 @@ Outputs are `results/<experiment>/noise_pl.mat` and `noise_fsm.mat`, containing
 final estimates, statuses, signed bias, variance, parameter RMSE, Monte Carlo
 standard errors, outcome counts, seeds, and resolved settings. By default,
 `save_case_results: true` also saves full histories in `noise_<pl|fsm>_sigma01.mat`
-through `_sigma05.mat`; the second case has `sigma_nu = 0.1`. These per-level files
+through `_sigma07.mat`; the second case has `sigma_nu = 0.1`. These per-level files
 work with `plot_comparison_results` through explicit `data_files`.
 Plot the complete saved sweep for both parametrizations with:
 
@@ -395,16 +395,18 @@ plot_comparison_results(struct('study','noise','experiment_name','example_1', ..
 ```
 
 This shows final relative parameter error per optimizer and parameter estimates
-against innovation standard deviation. Single runs show individual estimates;
-repeated runs show means with Monte Carlo intervals when at least two runs are
-retained. Dashed lines mark the true parameters. Exports include separate PL/FSM
-PDFs and CSV summaries with outcome counts. The direct helper is
+against innovation standard deviation. Parameter-error bars show the mean plus
+or minus one sample standard deviation of the per-run relative errors. The CSV
+reports this spread as `StdRelativeErrorPct` and preserves the MCSE/CI columns.
+Parameter-estimate plots use pointwise 95% Monte Carlo intervals and dashed
+true-parameter references. At least two retained runs are needed for error bars.
+Exports include separate PL/FSM PDFs and CSV summaries with outcome counts. The direct helper is
 `plot_noise_study(payload_or_filename, options)`. See
 [array dimensions](docs/identification_studies.md#noise-sensitivity-paired-records-fixed-initialization).
 
 Override `sigma_nu_values`, `theta0`, `n_runs`, `data_seed`, `summary_population`,
 and `save_case_results` in the study block or MATLAB `options.study`. Python also
-accepts `--noise-levels 0.05 0.1 0.2 0.5 1.0`.
+accepts `--noise-levels 0.05 0.1 0.2 0.3 0.5 0.7 1.0`.
 
 ## Record length and finite-sample bias
 

@@ -7,7 +7,8 @@ cfg = jsondecode(fileread(fullfile(root,'configs','example_1.json')));
 cfg.settings.lambda_g = 32; cfg.settings.burn_in = 4;
 cfg.settings.K_max = 3; cfg.settings.conv_threshold = 0; cfg.diagnostics.enabled = false;
 cfg.selected_methods = {'RGLS','WS-GGI'};
-options = struct('experiment_cfg',cfg,'study',struct('n_runs',2), ...
+options = struct('experiment_cfg',cfg,'study',struct('n_runs',2, ...
+    'sigma_nu_values',[0.05 0.1 0.2 0.3 0.5]), ...
     'output_file',fullfile(folder,'noise.mat'));
 console = evalc('p=noise_study(''example_1'',options);');
 assert(contains(console,'20/20 fits completed (100.0%)'));
@@ -55,6 +56,12 @@ again = noise_study('example_1',options);
 assert(isequaln(p.study.final_param_estimates,again.study.final_param_estimates));
 assert(isempty(dir(fullfile(folder,'repeat_sigma*.mat'))));
 assert(cfg.settings.sigma_nu==0.1); % Caller configuration is unchanged.
+options.study.n_runs=10;
+options.study.sigma_nu_values=[0.05 0.1];
+ten=noise_study('example_1',options);
+assert(isequal(size(ten.study.final_param_estimates),[2 2 10 6]));
+assert(numel(unique(ten.study.data_seeds))==10);
+options.study.n_runs=2;
 invalid = {[],[-0.1 0.1],[0.1 0.1],[0.2 0.1],NaN,Inf,[0.05 0.2;0.1 0.5]};
 for j = 1:numel(invalid)
     options.study.sigma_nu_values = invalid{j}; caught = false;

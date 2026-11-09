@@ -1010,6 +1010,7 @@ estimate_signals = {};
 measured_signals = {};
 estimate_labels = {};
 estimate_colors = [];
+estimate_is_bayesian = false(1, 0);
 for m = 1:numel(dataset.results)
     result = dataset.results(m);
     if ~is_plotted_result(result) || isempty(result.theta_hat)
@@ -1045,6 +1046,7 @@ for m = 1:numel(dataset.results)
     measured_signals{end + 1} = measured(1:n_samples); %#ok<AGROW>
     estimate_labels{end + 1} = label; %#ok<AGROW>
     estimate_colors(end + 1, :) = colors(color_idx, :); %#ok<AGROW>
+    estimate_is_bayesian(end + 1) = is_bayesian_result(result); %#ok<AGROW>
 end
 
 n_estimates = numel(estimate_signals);
@@ -1101,10 +1103,11 @@ fig_error = figure('Name', sprintf('%s Output Errors', parametrization), ...
     'Color', 'w', 'Units', 'centimeters', 'Position', [2 2 16 4]);
 ax_error = axes(fig_error, 'Units', 'normalized', 'Position', [.09 .24 .89 .62]);
 hold(ax_error, 'on');
+error_handles = gobjects(1, n_estimates);
 for idx = 1:n_estimates
     squared_error = (measured_signals{idx} - estimate_signals{idx}).^2;
     squared_error(squared_error == 0) = NaN; % Zero has no position on a log axis.
-    plot(ax_error, x, squared_error, ...
+    error_handles(idx) = plot(ax_error, x, squared_error, ...
         'Color', estimate_colors(idx, :), ...
         'DisplayName', latex_label(strrep(estimate_labels{idx}, ' (Python record)', '')));
 end
@@ -1115,7 +1118,11 @@ xlim(ax_error, [1 n_samples]);
 xlabel(ax_error, 'Sample $t$');
 ylabel(ax_error, '$(c(t)-\hat{c}(t))^2$');
 title(ax_error, sprintf('%s Parametrization: Squared Output Errors', parametrization));
-lgd = legend(ax_error, 'Location', 'southeast', 'FontSize', 8, 'NumColumns', 2);
+% Saved FSM results put BI-HMC first; keep it last in both legends without
+% changing curve draw order or the shared method colors.
+legend_order = [find(~estimate_is_bayesian), find(estimate_is_bayesian)];
+lgd = legend(ax_error, error_handles(legend_order), ...
+    'Location', 'southeast', 'FontSize', 8, 'NumColumns', 2);
 lgd.ItemTokenSize = [14 8];
 end
 

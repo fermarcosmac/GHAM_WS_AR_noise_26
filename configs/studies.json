@@ -11,7 +11,7 @@
     "max_draws": 100000
   },
   "noise_study": {
-    "n_runs": 1,
+    "n_runs": 10,
     "progress": true,
     "progress_interval_seconds": 10,
     "data_seed": 271828,

@@ -1,6 +1,7 @@
 function [figures, report] = plot_noise_study(payload, options)
 % Plot the saved noise sweep for PL or FSM; never rerun identification.
-% One run: final errors/estimates. Repeated runs: means and 95% MC intervals.
+% Error curves show mean +/- sample standard deviation across retained runs.
+% Parameter-estimate curves retain pointwise 95% Monte Carlo intervals.
 if nargin<2, options=struct(); end
 source_file='';
 if ischar(payload) || isstring(payload), source_file=char(payload); payload=load(payload); end
@@ -24,8 +25,8 @@ for field={'total_wall_time','total_wall_time_runs','total_time_runs'}
     end
 end
 means=NaN(L,M,P); param_se=means;
-error_mean=NaN(L,M); error_se=error_mean; used=zeros(L,M);
-rows=cell(L*M,21); row=0;
+error_mean=NaN(L,M); error_se=error_mean; error_std=error_mean; used=zeros(L,M);
+rows=cell(L*M,22); row=0;
 for j=1:L
     for m=1:M
         trials=reshape(values(j,m,:,:),[R P]);
@@ -39,7 +40,8 @@ for j=1:L
             error_mean(j,m)=mean(errors);
             means(j,m,:)=reshape(mean(trials(keep,:),1),[1 1 P]);
             if used(j,m)>1
-                error_se(j,m)=std(errors)/sqrt(used(j,m));
+                error_std(j,m)=std(errors,0);
+                error_se(j,m)=error_std(j,m)/sqrt(used(j,m));
                 param_se(j,m,:)=reshape(std(trials(keep,:),0,1)/sqrt(used(j,m)),[1 1 P]);
             end
         end
@@ -55,23 +57,25 @@ for j=1:L
             error_mean(j,m)+1.96*error_se(j,m),sum(status=="converged"), ...
             sum(status=="stalled"),sum(status=="max_iterations"),failed,sum(status=="skipped"),population, ...
             sum(status=="sampling_complete"),sum(status=="sampling_warning"), ...
-            mean_time,std_time,numel(times)};
+            mean_time,std_time,numel(times),error_std(j,m)};
     end
 end
 report=cell2table(rows,'VariableNames',{'Parametrization','SigmaNu','InnovationVariance', ...
     'Method','Trials','Used','MeanRelativeErrorPct','MCSE','CILow','CIHigh', ...
     'Converged','Stalled','MaxIterations','Failed','Skipped','SummaryPopulation', ...
     'SamplerDiagnosticsPassed','SamplingWarning','MeanTotalWallTimeSec', ...
-    'StdTotalWallTimeSec','TimingAttempts'});
+    'StdTotalWallTimeSec','TimingAttempts','StdRelativeErrorPct'});
 figures=gobjects(1,2);
 if R==1
     error_label='Relative parameter error (%)';
     estimate_label='Final estimate';
-    note='One run per method and noise level; no Monte Carlo intervals.';
+    error_note='One run per method and noise level; standard deviation is undefined.';
+    estimate_note='One run per method and noise level; no Monte Carlo intervals.';
 else
     error_label='Mean relative parameter error (%)';
     estimate_label='Mean final estimate';
-    note='Means with pointwise approximate 95% MC intervals where at least two runs are retained.';
+    error_note=sprintf('Mean +/- 1 sample standard deviation across %d attempted runs per method and noise level.',R);
+    estimate_note='Means with pointwise approximate 95% MC intervals where at least two runs are retained.';
 end
 
 fig=figure('Color','w','Name',[backend ' noise sensitivity: final parameter error'], ...
@@ -81,7 +85,7 @@ colors=colororder(fig); colors=repmat(colors,ceil(M/size(colors,1)),1);
 tl=tiledlayout(fig,ceil(M/3),3,'TileSpacing','compact','Padding','compact');
 for m=1:M
     ax=nexttile(tl); hold(ax,'on');
-    plot_curve(ax,levels,error_mean(:,m),error_se(:,m),colors(m,:),names{m},'noise_error');
+    plot_curve(ax,levels,error_mean(:,m),error_std(:,m),colors(m,:),names{m},'noise_error');
     format_axis(ax,levels);
     title(ax,method_figure_label(names{m}),'Interpreter','none');
     xlabel(ax,'Innovation standard deviation $\sigma_\nu$','Interpreter','latex');
@@ -96,7 +100,7 @@ for m=1:M
     end
 end
 title(tl,[backend ': sensitivity to innovation standard deviation'],'Interpreter','none');
-subtitle(tl,{note,['Summary population: ' population]},'Interpreter','none','FontSize',9);
+subtitle(tl,{error_note,['Summary population: ' population]},'Interpreter','none','FontSize',9);
 figures(1)=fig;
 
 fig=figure('Color','w','Name',[backend ' noise sensitivity: final parameter estimates'], ...
@@ -106,7 +110,7 @@ tl=tiledlayout(fig,ceil(P/3),3,'TileSpacing','compact','Padding','compact');
 for p=1:P
     ax=nexttile(tl); hold(ax,'on');
     for m=1:M
-        plot_curve(ax,levels,means(:,m,p),param_se(:,m,p),colors(m,:), ...
+        plot_curve(ax,levels,means(:,m,p),1.96*param_se(:,m,p),colors(m,:), ...
             method_figure_label(names{m}),'noise_estimate');
     end
     yline(ax,truth(p),'k--','HandleVisibility','off','Tag','true_parameter');
@@ -120,7 +124,7 @@ for p=1:P
     end
 end
 title(tl,[backend ': final parameter estimates across noise levels'],'Interpreter','none');
-subtitle(tl,{note,'Dashed lines show the true parameters.'},'Interpreter','none','FontSize',9);
+subtitle(tl,{estimate_note,'Dashed lines show the true parameters.'},'Interpreter','none','FontSize',9);
 figures(2)=fig;
 
 if isfield(options,'export_figures') && options.export_figures
@@ -134,9 +138,9 @@ if isfield(options,'export_figures') && options.export_figures
 end
 end
 
-function plot_curve(ax,x,y,se,color,label,tag)
-% Plot points separately: undefined single-run MCSE must not hide the curve.
-y=y(:).'; half=1.96*se(:).';
+function plot_curve(ax,x,y,half_width,color,label,tag)
+% Plot points separately so undefined single-run error bars do not hide them.
+y=y(:).'; half=half_width(:).';
 plot(ax,x,y,'-o','Color',color,'LineWidth',1.1,'MarkerSize',4, ...
     'DisplayName',label,'Tag',tag);
 keep=isfinite(y) & isfinite(half);

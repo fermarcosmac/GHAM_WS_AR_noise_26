@@ -1,5 +1,5 @@
 function test_plot_noise_study()
-% Check per-run error aggregation, single-run display, outcomes, and dispatch.
+% Check error aggregation, sample-SD bars, single-run display, and dispatch.
 root=fileparts(fileparts(mfilename('fullpath')));
 folder=tempname(fullfile(root,'results')); mkdir(folder);
 cleanup=onCleanup(@()cleanup_test(folder,root)); %#ok<NASGU>
@@ -24,12 +24,50 @@ p=struct('parametrization','PL','experiment_name','test_noise_plot','study',stud
 assert(numel(figures)==2 && height(report)==9);
 rows=strcmp(report.Method,'WS-GGI');
 assert(max(abs(report.MeanRelativeErrorPct(rows)-[20;40;60]))<1e-12);
-assert(all(report.Used(rows)==2 & report.MCSE(rows)==0));
+assert(all(report.Used(rows)==2 & report.MCSE(rows)==0 & report.StdRelativeErrorPct(rows)==0));
 rows=strcmp(report.Method,'WS-GNI');
-assert(all(report.Used(rows)==1 & report.Failed(rows)==1 & isnan(report.MCSE(rows))));
+assert(all(report.Used(rows)==1 & report.Failed(rows)==1 & ...
+    isnan(report.MCSE(rows)) & isnan(report.StdRelativeErrorPct(rows))));
 rows=strcmp(report.Method,'RGLS');
 assert(all(report.Used(rows)==0 & report.Skipped(rows)==2 & isnan(report.MeanRelativeErrorPct(rows))));
 close(figures);
+
+% Ten unequal errors distinguish sample SD from MCSE and 95% mean intervals.
+repeated_values=NaN(3,3,10,2);
+repeated_states=repmat({'skipped'},3,3,10);
+for j=1:3
+    for r=1:10
+        repeated_values(j,1,r,:)=reshape(truth+[j*r;0],[1 1 1 2]);
+        repeated_states{j,1,r}='converged';
+        repeated_values(j,2,r,:)=reshape(truth+[0;j*r],[1 1 1 2]);
+        repeated_states{j,2,r}='converged';
+    end
+    repeated_states{j,2,10}='failed';
+end
+repeated=p;
+repeated.study.n_runs=10;
+repeated.study.final_param_estimates=repeated_values;
+repeated.study.statuses=repeated_states;
+for backend={'PL','FSM'}
+    repeated.parametrization=backend{1};
+    [figures,report]=plot_noise_study(repeated);
+    rows=strcmp(report.Method,'WS-GGI');
+    expected_mean=20*mean(1:10)*(1:3).';
+    expected_std=20*std(1:10,0)*(1:3).';
+    assert(max(abs(report.MeanRelativeErrorPct(rows)-expected_mean))<1e-12);
+    assert(max(abs(report.StdRelativeErrorPct(rows)-expected_std))<1e-12);
+    assert(max(abs(report.MCSE(rows)-expected_std/sqrt(10)))<1e-12);
+    curve=findobj(figures(1),'Tag','noise_error','DisplayName','WS-GGI');
+    bars=findall(curve.Parent,'Tag','noise_error_interval');
+    assert(isscalar(bars));
+    assert(max(abs(bars.YPositiveDelta(:)-expected_std))<1e-12);
+    assert(max(abs(bars.YNegativeDelta(:)-expected_std))<1e-12);
+    rows=strcmp(report.Method,'WS-GNI');
+    assert(all(report.Used(rows)==9 & report.Failed(rows)==1));
+    expected_std=20*std(1:9,0)*(1:3).';
+    assert(max(abs(report.StdRelativeErrorPct(rows)-expected_std))<1e-12);
+    close(figures);
+end
 
 % Singleton realization axes from MATLAB and SciPy must remain usable.
 p.study.n_runs=1; p.study.final_param_estimates=values(:,:,1,:);
@@ -37,6 +75,7 @@ p.study.statuses=states(:,:,1);
 [figures,report]=plot_noise_study(p,struct('export_figures',true,'fig_dir',folder));
 assert(isempty(findall(figures,'Type','errorbar')));
 assert(all(isnan(report.MCSE)));
+assert(all(isnan(report.StdRelativeErrorPct)));
 curve=findobj(figures(1),'Tag','noise_error','DisplayName','WS-GGI');
 assert(isequal(curve.XData,[0 .1 .5]));
 assert(max(abs(curve.YData-[20 40 60]))<1e-12);
@@ -46,6 +85,7 @@ assert(exist(fullfile(folder,'noise_error_test_noise_plot_pl.pdf'),'file')==2);
 assert(exist(fullfile(folder,'noise_estimates_test_noise_plot_pl.pdf'),'file')==2);
 exported=readtable(fullfile(folder,'noise_summary_test_noise_plot_pl.csv'));
 assert(height(exported)==9 && isequal(exported.Used,report.Used));
+assert(isequaln(exported.StdRelativeErrorPct,report.StdRelativeErrorPct));
 close(figures);
 
 % A single converged replicate has no MC interval, even in a repeated study.

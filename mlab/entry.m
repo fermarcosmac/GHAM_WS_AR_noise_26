@@ -7,7 +7,7 @@
 
 repo_root = pwd; % call from repo root!
 addpath([repo_root '\mlab']);
-experiment_name = 'example_CSTR'; % 'example_1' or 'example_CSTR'
+experiment_name = 'example_1'; % 'example_1' or 'example_CSTR'
 base_cfg = jsondecode(fileread(fullfile(repo_root,'configs',[experiment_name '.json'])));
 results_dir = fullfile(repo_root,'results',experiment_name);
 fig_dir = fullfile(repo_root,'figs');
@@ -72,25 +72,25 @@ payload = record_length_study(experiment_name,options);
 %     'output_file',fullfile(local_results_dir,'record_length_pl_short.mat'));
 % payload = record_length_study(experiment_name,options);
 
-%% PL noise sensitivity: five innovation standard deviations, fixed start
-% Uses noise_study in configs/studies.json: [0.05 0.1 0.2 0.5 1.0].
-% noise_study.n_runs = 1: one run per optimizer and noise level by default.
+%% PL noise sensitivity: seven innovation standard deviations, fixed start
+% Uses noise_study in configs/studies.json: [0.05 0.1 0.2 0.3 0.5 0.7 1.0].
+% noise_study.n_runs = 10: ten runs per method and noise level by default.
 % Each of n_runs independent records is paired across all levels and methods.
-% Saves noise_pl.mat plus noise_pl_sigma01.mat ... noise_pl_sigma05.mat.
+% Saves noise_pl.mat plus noise_pl_sigma01.mat ... noise_pl_sigma07.mat.
 payload = noise_study(experiment_name);
 
 %% PL noise sensitivity: small local experiment
 % cfg = base_cfg;
 % cfg.settings.lambda_g = 256;
 % options = struct('experiment_cfg',cfg, ...
-%     'study',struct('n_runs',1,'K_max',10), ...
+%     'study',struct('n_runs',10,'K_max',10), ...
 %     'output_file',fullfile(local_results_dir,'noise_pl_short.mat'));
 % payload = noise_study(experiment_name,options);
 
-%% Plot noise sensitivity: all five levels for both PL and FSM
+%% Plot noise sensitivity: all seven levels for both PL and FSM
 % Reads noise_pl.mat and noise_fsm.mat; no identification runs.
-% Final relative parameter error per optimizer, plus parameter estimates.
-% With n_runs=1, plots the individual outcomes without Monte Carlo intervals.
+% Relative parameter error: mean +/- one sample standard deviation across runs.
+% Also plots parameter estimates with pointwise 95% Monte Carlo intervals.
 plot_comparison_results(struct('study','noise', ...
     'experiment_name',experiment_name,'fig_dir',fig_dir, ...
     'export_figures',export_figures));

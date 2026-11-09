@@ -79,7 +79,7 @@ class BayesianStudyTests(unittest.TestCase):
                 with redirect_stdout(io.StringIO()):
                     init_path = run_initialization_study(cfg, {**common, "n_runs": 2,
                         "initialization_seed": 111, "scale": .03}, output_file=directory/"init.mat")
-                    noise_path = run_noise_study(cfg, {**common, "sigma_nu_values": [.05, .2]},
+                    noise_path = run_noise_study(cfg, {**common, "n_runs": 2, "sigma_nu_values": [.05, .2]},
                                                  output_file=directory/"noise.mat")
                     record_path = run_record_length_study(cfg, {**common, "record_lengths": [6, 9],
                         "fsm_resolutions": [{"label": "exact"}]}, output_file=directory/"record.mat")
@@ -95,8 +95,14 @@ class BayesianStudyTests(unittest.TestCase):
                     self.assertTrue(np.all(saved["total_wall_time"] > 0))
                     self.assertTrue(np.asarray(saved["is_bayesian"]).all())
                     self.assertTrue(np.isin(saved["statuses"], ["sampling_complete", "sampling_warning"]).all())
-                    self.assertEqual(saved["sampling_seeds"].reshape(-1)[0],
-                                     saved["sampling_seeds"].reshape(-1)[1])
+                    if path == noise_path:
+                        seeds = saved["sampling_seeds"].reshape(2, 2)
+                        np.testing.assert_array_equal(seeds[0], seeds[1])
+                        self.assertNotEqual(seeds[0, 0], seeds[0, 1])
+                        self.assertEqual(saved["final_param_estimates"].shape, (2, 2, 6))
+                    else:
+                        self.assertEqual(saved["sampling_seeds"].reshape(-1)[0],
+                                         saved["sampling_seeds"].reshape(-1)[1])
                     for case_path in np.asarray(saved["case_files"]).reshape(-1):
                         case = loadmat(str(case_path), simplify_cells=True)
                         result = case["results"]
