@@ -22,6 +22,9 @@ class IdentificationStudyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cfg = load_experiment_config('example_1')
+        # The legacy optimization fixture is independent of the user's choice
+        # to include BI_HMC; real mixed-study coverage lives in test_bayesian_studies.
+        cls.cfg['selected_methods'] = [m for m in cls.cfg['selected_methods'] if m != 'BI_HMC']
         cls.cfg['settings'].update(lambda_g=32, burn_in=4, K_max=3, conv_threshold=0)
         cls.cfg['diagnostics'] = {'enabled': False, 'save_matrices': False}
         cls.settings = load_json_config(Path(__file__).resolve().parents[1]/'configs'/'studies.json')

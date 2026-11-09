@@ -68,7 +68,7 @@ def _json_safe(value):
 
 def run_bayesian_example(args, exp_cfg, configs, data, dims, theta_true):
     """A separate inference branch: save posteriors and final scores, not updates."""
-    from comparison_torch import (inference_data_context, run_method_set,
+    from comparison_torch import (record_data_context, run_method_set,
                                   save_comparison_results, summarize_montecarlo)
     from bayesian_plots import plot_bayesian_posteriors, plot_bayesian_outputs
 
@@ -88,7 +88,7 @@ def run_bayesian_example(args, exp_cfg, configs, data, dims, theta_true):
         float(settings["conv_threshold"]), False, verbose=True, experiment_cfg=exp_cfg,
         run_metadata={"data_seed": int(exp_cfg.get("seed", 42)), "mc_index": 1,
                       "experiment_name": args.experiment},
-        data_context=inference_data_context(data, int(settings["burn_in"])))[0]
+        data_context=record_data_context(data, int(settings["burn_in"])))[0]
     truth = theta_true.detach().cpu().numpy()
     names = build_param_names(dims.na, dims.nb, dims.nf, dims.nd)
     intervals = result.get("posterior_interval", np.full((2, dims.n_params), np.nan))

@@ -3,13 +3,12 @@ import unittest
 
 import numpy as np
 import torch
-from scipy.linalg import solve_discrete_lyapunov, toeplitz
 from scipy.signal import lfilter
 
 from bayesian_hmc import (BayesianWienerARModel, coefficients_to_coordinates,
                           denominator_log_jacobian, exact_lfilter, posterior_diagnostics,
                           reflection_to_coefficients, resolve_hmc_config, run_bi_hmc)
-from wiener_system import WienerDimensions
+from wiener_system import WienerDimensions, params_to_loss
 
 
 class BayesianHMCTests(unittest.TestCase):
@@ -48,61 +47,61 @@ class BayesianHMCTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             coefficients_to_coordinates(torch.tensor([1.1], dtype=torch.float64))
 
-    def make_model(self, policy="stationary", burn=None):
+    def make_model(self):
         dims = WienerDimensions(na=2, nb=3, nf=3, nd=2)
-        cfg = resolve_hmc_config({"noise_initialization": policy})
-        r, c, history = self.randn(18), self.randn(18), self.randn(7)
-        model = BayesianWienerARModel(r, c, dims, cfg, input_history=history, noise_burn_in=burn)
+        cfg = resolve_hmc_config({})
+        r, c = self.randn(18), self.randn(18)
+        model = BayesianWienerARModel(r, c, dims, cfg)
         z = .2*self.randn(dims.n_params+1)
         z[-1] = -1.3
         return model, z
 
-    def test_observed_input_prehistory_and_exact_signal(self):
+    def test_signal_starts_at_zero_on_the_retained_record(self):
         model, z = self.make_model()
         theta, _, _ = model.transform(z)
         a, b = theta[:2].numpy(), theta[2:5].numpy()
-        expected = lfilter(np.r_[0., b], np.r_[1., a], model.full_input.numpy())[model.input_count:]
+        expected = lfilter(np.r_[0., b], np.r_[1., a], model.r.numpy())
         alpha, _ = model.signal(theta)
         np.testing.assert_allclose(alpha.detach().numpy(), expected, atol=1e-13)
 
-    def test_stationary_and_finite_burn_likelihood_match_dense_covariance(self):
-        for burn in (None, 0, 5):
-            model, z = self.make_model(burn=burn)
-            theta, _, _ = model.transform(z)
-            _, beta = model.signal(theta)
-            e = (model.c-beta).detach().numpy()
-            d = theta[-2:].detach().numpy()
-            length = len(e)
-            if burn is None:
-                transition = np.array([[-d[0], -d[1]], [1., 0.]])
-                covariance = solve_discrete_lyapunov(transition, np.diag([1., 0.]))
-                state = covariance[:, 0]
-                gamma = []
-                for lag in range(length):
-                    gamma.append(state[0])
-                    state = transition @ state
-                matrix = toeplitz(gamma)
-            else:
-                impulse = np.zeros(length+burn)
-                impulse[0] = 1
-                response = lfilter([1.], np.r_[1., d], impulse)
-                H = np.zeros((length, length+burn))
-                for row in range(length):
-                    time = burn+row
-                    H[row, :time+1] = response[:time+1][::-1]
-                matrix = H @ H.T
-            q, logdet, count = model.likelihood_terms(theta)
-            self.assertAlmostEqual(float(q), e @ np.linalg.solve(matrix, e), places=9)
-            self.assertAlmostEqual(float(logdet), np.linalg.slogdet(matrix)[1], places=9)
-            self.assertEqual(count, length)
+    def test_zero_state_likelihood_matches_dense_gaussian_and_fsm_loss(self):
+        model, z = self.make_model()
+        theta, _, _ = model.transform(z)
+        _, beta = model.signal(theta)
+        e = (model.c-beta).detach().numpy()
+        d = theta[-2:].detach().numpy()
+        length = len(e)
+        impulse = np.zeros(length); impulse[0] = 1
+        response = lfilter([1.], np.r_[1., d], impulse)
+        H = np.zeros((length, length))
+        for row in range(length):
+            H[row, :row+1] = response[:row+1][::-1]
+        matrix = H @ H.T
+        q, logdet, count = model.likelihood_terms(theta)
+        expected_innovations = lfilter(np.r_[1., d], [1.], e)
+        self.assertAlmostEqual(float(q), e @ np.linalg.solve(matrix, e), places=9)
+        self.assertAlmostEqual(float(q), expected_innovations @ expected_innovations, places=10)
+        self.assertEqual(float(logdet), 0.)
+        self.assertEqual(count, length)
+        fsm = params_to_loss(theta, model.r, None, model.c, model.dims, fsm_n_freq=1024)
+        self.assertAlmostEqual(float(q/count), float(fsm), places=10)
 
-    def test_log_posterior_gradients_all_boundary_policies(self):
-        for policy, burn in (("stationary", None), ("conditional", None), ("zero", None), ("stationary", 5)):
-            model, position = self.make_model(policy=policy, burn=burn)
-            self.assertTrue(torch.autograd.gradcheck(model.log_prob, (position.requires_grad_(),),
-                                                    atol=2e-5, rtol=2e-4))
+    def test_zero_state_log_posterior_gradients(self):
+        model, position = self.make_model()
+        self.assertTrue(torch.autograd.gradcheck(model.log_prob, (position.requires_grad_(),),
+                                                atol=2e-5, rtol=2e-4))
 
-    def test_short_record_ar_covariance_and_white_noise(self):
+    def test_removed_boundary_options_cannot_restore_the_old_likelihood(self):
+        for value in ('stationary', 'finite_burn_in', 'conditional', 'zero'):
+            with self.assertRaisesRegex(ValueError, 'obsolete boundary'):
+                resolve_hmc_config({'noise_initialization': value})
+        with self.assertRaisesRegex(ValueError, 'obsolete boundary'):
+            resolve_hmc_config({'hmc': {'noise_burn_in': 10}})
+        model, _ = self.make_model()
+        with self.assertRaises(TypeError):
+            run_bi_hmc(model.r, model.c, model.dims, input_history=self.randn(7))
+
+    def test_short_record_ar_whitening_and_white_noise(self):
         for noise_order in (0, 4):
             dims = WienerDimensions(0, 1, 1, noise_order)
             model = BayesianWienerARModel(self.randn(2), self.randn(2), dims, resolve_hmc_config({}))

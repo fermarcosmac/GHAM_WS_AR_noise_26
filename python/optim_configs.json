@@ -23,12 +23,11 @@
       "prior_d_std": 0.5,
       "variance_prior_shape": 3.0,
       "variance_prior_scale": 0.002,
-      "noise_initialization": "stationary",
       "seed": 20261030,
       "progress_every": 100,
       "max_rhat": 1.01,
       "min_ess": 400,
-      "notes": "Separate exact-IIR Bayesian HMC sampler. Posterior mean in original coefficient coordinates; Gaussian physical priors and inverse-gamma innovation variance. Explicit observed prehistory/noise burn-in overrides the stationary boundary default. K_max and optimizer convergence tolerances do not set the sampling budget."
+      "notes": "Separate exact-IIR Bayesian HMC sampler. Signal and AR-noise states are zero at the retained-record start, matching the optimization methods; all retained innovations enter the likelihood. Posterior mean in original coefficient coordinates; Gaussian physical priors and inverse-gamma innovation variance. K_max and optimizer convergence tolerances do not set the sampling budget."
     },
     "WS_GGI": {
       "step_size": 0.03,

@@ -10,8 +10,9 @@ The likelihood uses an exact causal IIR recursion.  SciPy's C implementation is
 wrapped in a first-derivative PyTorch autograd function; its finite-record adjoint
 is exact, rather than an FFT/circular-filter approximation.  This CPU/float64
 implementation is appropriate for the small parameter vectors in these studies.
-It supports known observed input prehistory and an exact finite-burn-in AR noise
-covariance, as well as stationary, known-zero, and conditional noise likelihoods.
+Both signal and AR-noise states are fixed to zero at the first retained sample,
+matching the optimization backends. Every retained innovation enters the loss;
+input prehistory and initial-state covariance corrections are not supported.
 """
 from __future__ import annotations
 
@@ -120,7 +121,7 @@ DEFAULT_HMC_CONFIG = {
     "variance_prior_shape": 3.0, "variance_prior_scale": 0.002,
     "coefficient_prior_mean": 0.0, "coefficient_prior_std": 1.0,
     "seed": 20261030, "progress_every": 100, "divergence_threshold": 1000.0,
-    "max_rhat": 1.01, "min_ess": 100.0, "noise_initialization": "stationary",
+    "max_rhat": 1.01, "min_ess": 100.0,
     "min_step_size": 1e-7, "max_step_size": 1.0, "cpu_threads": 1,
     "metric_regularization_weight": 5.0, "metric_regularization_variance": 1e-6,
     "metric_min_variance": 1e-10, "metric_max_variance": 1e3,
@@ -132,6 +133,10 @@ def resolve_hmc_config(method_cfg: dict[str, Any] | None) -> dict[str, Any]:
     cfg = copy.deepcopy(DEFAULT_HMC_CONFIG)
     supplied = dict(method_cfg or {})
     supplied.update(supplied.pop("hmc", {}))
+    removed = {"noise_initialization", "noise_burn_in", "input_history", "input_prehistory"}.intersection(supplied)
+    if removed:
+        raise ValueError("BI_HMC always uses zero states at the retained-record start; "
+                         "remove obsolete boundary settings: " + ", ".join(sorted(removed)))
     cfg.update(supplied)
     for key in ("chains", "samples", "leapfrog_steps", "mass_window", "progress_every"):
         value = cfg[key]
@@ -160,8 +165,6 @@ def resolve_hmc_config(method_cfg: dict[str, Any] | None) -> dict[str, Any]:
         raise ValueError("BI_HMC min_step_size exceeds max_step_size")
     if cfg["metric_min_variance"] > cfg["metric_max_variance"]:
         raise ValueError("BI_HMC metric_min_variance exceeds metric_max_variance")
-    if cfg["noise_initialization"] not in {"stationary", "zero", "conditional", "finite_burn_in"}:
-        raise ValueError("Unknown BI_HMC noise_initialization")
     cfg["seed"] = int(cfg["seed"])
     return cfg
 
@@ -178,7 +181,7 @@ def _coefficient_vector(value, count, name):
 class BayesianWienerARModel:
     """A differentiable physical prior and exact finite-record Gaussian model."""
 
-    def __init__(self, r, c, dims, config, *, input_history=None, noise_burn_in=None):
+    def __init__(self, r, c, dims, config):
         self.dims, self.config = dims, config
         if min(dims.na, dims.nb, dims.nd) < 0 or dims.nf < 1 or dims.nb < 1:
             raise ValueError("BI_HMC requires na,nd>=0, nb>=1 and nf>=1")
@@ -188,12 +191,6 @@ class BayesianWienerARModel:
             raise ValueError("BI_HMC input and output must be nonempty, equal-length vectors")
         if not torch.isfinite(self.r).all() or not torch.isfinite(self.c).all():
             raise ValueError("BI_HMC observations must be finite")
-        history = self.r.new_empty(0) if input_history is None else torch.as_tensor(input_history).detach().to(
-            device="cpu", dtype=torch.float64).reshape(-1).clone()
-        if not torch.isfinite(history).all():
-            raise ValueError("Observed input prehistory must be finite")
-        self.input_count = history.numel()
-        self.full_input = torch.cat((history, self.r))
         self.prior_mean = _coefficient_vector(config["coefficient_prior_mean"], dims.n_params, "coefficient_prior_mean")
         self.prior_std = _coefficient_vector(config["coefficient_prior_std"], dims.n_params, "coefficient_prior_std")
         start = 0
@@ -203,26 +200,6 @@ class BayesianWienerARModel:
             start += count
         if not torch.all(self.prior_std > 0):
             raise ValueError("BI_HMC coefficient prior standard deviations must be positive")
-        self.noise_policy = config["noise_initialization"]
-        if noise_burn_in is not None:
-            if isinstance(noise_burn_in, bool) or int(noise_burn_in) != noise_burn_in or noise_burn_in < 0:
-                raise ValueError("noise_burn_in must be a nonnegative integer")
-            self.noise_policy = "finite_burn_in"
-            self.noise_burn_in = int(noise_burn_in)
-        else:
-            self.noise_burn_in = int(config.get("noise_burn_in", 0))
-        if self.noise_burn_in < 0:
-            raise ValueError("noise_burn_in must be nonnegative")
-        self.initial_count = min(dims.nd, self.r.numel())
-        if self.noise_policy == "conditional" and self.r.numel() <= dims.nd:
-            raise ValueError("Conditional AR likelihood needs more observations than noise coefficients")
-        p = dims.nd
-        self.yw_masks = torch.zeros((p+1, p+1, p), dtype=torch.float64)
-        for k in range(p+1):
-            for i in range(1, p+1):
-                self.yw_masks[k, abs(k-i), i-1] = 1.0
-        index = torch.arange(self.initial_count)
-        self.initial_lags = (index[:, None] - index[None, :]).abs()
         self.evaluation_count = 0
 
     def transform(self, position):
@@ -244,30 +221,15 @@ class BayesianWienerARModel:
     def signal(self, theta):
         a, b, f, _ = split_theta(theta, self.dims)
         numerator = torch.cat((theta.new_zeros(1), b))
-        alpha_full = exact_lfilter(self.full_input, a, numerator)
-        alpha = alpha_full[self.input_count:]
+        alpha = exact_lfilter(self.r, a, numerator)
         return alpha, polynomial_nonlinearity(alpha, f)
 
-    def initial_noise_covariance(self, d):
-        count = self.initial_count
-        if self.noise_policy == "finite_burn_in":
-            horizon = self.noise_burn_in + count
-            impulse = d.new_zeros(horizon)
-            impulse[0] = 1.0
-            response = exact_lfilter(impulse, d, d.new_ones(1))
-            times = self.noise_burn_in + torch.arange(count)
-            lags = times[:, None] - torch.arange(horizon)[None, :]
-            response_matrix = response[lags.clamp(min=0)] * (lags >= 0)
-            return response_matrix @ response_matrix.T
-        p = d.numel()
-        system = torch.eye(p+1, dtype=d.dtype) + torch.einsum("kji,i->kj", self.yw_masks, d)
-        rhs = d.new_zeros(p+1)
-        rhs[0] = 1.0
-        gamma = torch.linalg.solve(system, rhs)
-        return gamma[self.initial_lags]
-
     def likelihood_terms(self, theta):
-        """Return Q, log|unit covariance| and number of Gaussian contributions."""
+        """Return Q, zero log determinant, and count for all retained innovations.
+
+        The zero-state AR whitening matrix is unit lower triangular, so the
+        Gaussian normalization has no parameter-dependent determinant term.
+        """
         _, beta = self.signal(theta)
         e = self.c-beta
         d = split_theta(theta, self.dims)[3]
@@ -275,17 +237,7 @@ class BayesianWienerARModel:
         for lag, coefficient in enumerate(d.unbind(), 1):
             if lag < e.numel():
                 residual = residual + coefficient * torch.cat((e.new_zeros(lag), e[:-lag]))
-        if not d.numel() or self.noise_policy == "zero" or (
-                self.noise_policy == "finite_burn_in" and self.noise_burn_in == 0):
-            return residual.square().sum(), e.new_zeros(()), e.numel()
-        count = self.initial_count
-        if self.noise_policy == "conditional":
-            return residual[count:].square().sum(), e.new_zeros(()), e.numel()-count
-        covariance = self.initial_noise_covariance(d)
-        factor = torch.linalg.cholesky(covariance)
-        initial = torch.linalg.solve_triangular(factor, e[:count, None], upper=False).reshape(-1)
-        q = initial.square().sum()+residual[count:].square().sum()
-        return q, 2*torch.log(torch.diag(factor)).sum(), e.numel()
+        return residual.square().sum(), e.new_zeros(()), e.numel()
 
     def log_prob(self, position, *, include_jacobian=True):
         self.evaluation_count += 1
@@ -480,7 +432,7 @@ def _stable(theta, dims):
 
 def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
                method_cfg: dict[str, Any] | None = None, *, initial_theta=None,
-               input_history=None, noise_burn_in: int | None = None, seed: int | None = None,
+               seed: int | None = None,
                progress_callback: Callable[[dict[str, Any]], None] | None = None,
                verbose: bool = False) -> dict[str, Any]:
     """Run independent HMC chains and return their physical posterior mean.
@@ -490,12 +442,14 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
     r : torch.Tensor, shape (N,)
         Known external input/excitation over the retained observation record:
         this is u_t in the manuscript, NOT an output residual or innovation.
-        Sample r[t] is aligned with observed output c[t]. Earlier observed
-        input samples, if available, belong in ``input_history`` instead.
+        Sample r[t] is aligned with observed output c[t]. Only the retained
+        record is supplied; the signal filter starts at zero at its beginning.
     c : torch.Tensor, shape (N,)
         Measured noisy output: c_t = beta_t(theta) + e_t. Must have the same
         length as r. Both records must be finite; inference copies them to
-        CPU float64 and does not modify the supplied tensors.
+        CPU float64 and does not modify the supplied tensors. Signal and
+        AR-noise states are zero at the first retained sample, and all samples
+        contribute to the likelihood.
     dims : WienerDimensions
         Model orders na, nb, nf, nd. There are P = na + nb + (nf - 1) + nd
         free physical coefficients, ordered as (a1,...,a_na, b1,...,b_nb,
@@ -512,18 +466,6 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
         b1=1. Each chain jitters the corresponding unconstrained coordinates
         and may run the configured initialization optimization. The starting
         variance comes from method_cfg['initial_variance'].
-    input_history : array-like of shape (H,), optional, keyword-only
-        Observed input samples immediately preceding r, in chronological
-        order. Each candidate signal filter is replayed over history followed
-        by r, starting from a known zero signal state before the history.
-        Without history, the assumed signal state is zero at r's first sample.
-        No true internal signal state is supplied.
-    noise_burn_in : nonnegative int or None, optional, keyword-only
-        Number of discarded noise samples between a known zero AR-noise start
-        and c's first retained sample. If supplied, overrides the configured
-        noise policy with the exact finite-burn-in initial covariance. Only
-        the count is used, never the discarded innovations or noise values.
-        If None, use the configured noise_initialization policy.
     seed : int or None, optional, keyword-only
         Override the configured base sampler seed. Each chain derives its own
         local generator from this seed; the global PyTorch RNG is unchanged.
@@ -559,8 +501,8 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
             Retained unconstrained coordinates (z_a, b, f, z_d, log variance).
             These are sampler draws, not optimizer parameter trajectories.
         final_alpha, final_beta : tensors, shape (N,)
-            Internal signal and noise-free output evaluated at theta_hat,
-            including input history; returned on r's original device/dtype.
+            Internal signal and noise-free output evaluated at theta_hat
+            from zero state; returned on r's original device/dtype.
         status, diagnostics_passed, point_estimate_valid : str, bool, bool
             Status is 'sampling_complete', 'sampling_warning', or 'failed'.
             Diagnostic checks and a finite/stable physical mean determine the
@@ -588,7 +530,7 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
     cfg = resolve_hmc_config(method_cfg)
     if seed is not None:
         cfg["seed"] = int(seed)
-    model = BayesianWienerARModel(r, c, dims, cfg, input_history=input_history, noise_burn_in=noise_burn_in)
+    model = BayesianWienerARModel(r, c, dims, cfg)
     output_device, output_dtype = r.device, r.dtype
     if initial_theta is None:
         initial_theta = torch.zeros(dims.n_params, dtype=torch.float64)
@@ -743,9 +685,10 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
         "point_estimator": "posterior_mean", "sampler_diagnostics": diagnostic,
         "resolved_config": cfg, "sampler_seed": cfg["seed"],
         "sampling_transitions": maximum, "retained_draws": count*retained,
-        "forward_model": "exact_causal_iir", "noise_initialization": model.noise_policy,
-        "noise_burn_in": model.noise_burn_in, "input_history_length": model.input_count,
-        "signal_initialization": "zero_before_observed_input_history" if model.input_count else "zero_at_record_start",
+        "forward_model": "exact_causal_iir", "noise_initialization": "zero",
+        "noise_burn_in": 0, "input_history_length": 0,
+        "signal_initialization": "zero_at_record_start",
+        "initial_condition_policy": "zero_state_fit_after_burn_in",
     }
     result["total_time"] = time.perf_counter()-started
     diagnostic["effective_samples_per_second"] = diagnostic["mean_ess"]/result["total_time"]
@@ -754,7 +697,7 @@ def _run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
 
 def run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
                method_cfg: dict[str, Any] | None = None, *, initial_theta=None,
-               input_history=None, noise_burn_in: int | None = None, seed: int | None = None,
+               seed: int | None = None,
                progress_callback: Callable[[dict[str, Any]], None] | None = None,
                verbose: bool = False) -> dict[str, Any]:
     """Run the separate HMC inference loop, including all setup in wall time.
@@ -775,7 +718,6 @@ def run_bi_hmc(r: torch.Tensor, c: torch.Tensor, dims: WienerDimensions,
         if changed:
             torch.set_num_threads(desired_threads)
         result = _run_bi_hmc(r, c, dims, config, initial_theta=initial_theta,
-                            input_history=input_history, noise_burn_in=noise_burn_in,
                             seed=seed, progress_callback=progress_callback, verbose=verbose)
     finally:
         if changed:

@@ -31,6 +31,9 @@ class ComparisonDiagnosticsTests(unittest.TestCase):
         cls.data = generate_example_data(cls.dims, cls.theta, 32, 4, .1,
                                         dtype=torch.float64, device=torch.device('cpu'))
         cls.configs = load_json_config(Path(__file__).parent / 'optim_configs.json')['methods']
+        # This tests result plumbing, not convergence of a production sampler.
+        cls.configs['BI_HMC'].update(chains=2, warmup=4, samples=8, leapfrog_steps=2,
+            initial_optimization_steps=0, adapt_mass=False, adapt_step_size=False, step_size=.001)
         cls.initialization = {'policy': 'consistent', 'theta0': [0, 0, 1, 0, 0, 0]}
 
     def config(self, key='WS_GNI'):
@@ -150,8 +153,10 @@ class ComparisonDiagnosticsTests(unittest.TestCase):
         runs = run_method_set(self.exp['selected_methods'], self.configs, d['r'], d['nu'], d['c'],
             self.theta, self.dims, 32, 3, 0, True, verbose=False,
             experiment_cfg={'initialization': self.initialization}, run_metadata={'data_seed': 42, 'mc_index': 1})
-        self.assertEqual(runs[0]['status'], 'skipped')
-        self.assertTrue(all(r['status'] == 'max_iterations' for r in runs[1:]))
+        by_name = {r['name']: r for r in runs}
+        self.assertEqual(by_name['RGLS']['status'], 'skipped')
+        self.assertIn(by_name['BI_HMC']['status'], ('sampling_complete', 'sampling_warning'))
+        self.assertTrue(all(r['status'] == 'max_iterations' for r in runs if r['name'] not in ('RGLS', 'BI_HMC')))
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory:
             path = Path(directory)/'results.mat'
             save_comparison_results(path, runs, experiment_name='test', mode='MONTECARLO',
@@ -161,11 +166,12 @@ class ComparisonDiagnosticsTests(unittest.TestCase):
             saved = loadmat(path, simplify_cells=True)
             self.assertEqual(saved['schema_version'], 2)
             self.assertEqual(len(saved['all_runs']), 2)
-            nested = saved['all_runs'][1][1]
+            optimizer_index = self.exp['selected_methods'].index('WS-GNI')
+            nested = saved['all_runs'][1][optimizer_index]
             diagnostics = nested['diagnostics'] if isinstance(nested, dict) else nested.diagnostics
             values = diagnostics['raw_condition'] if isinstance(diagnostics, dict) else diagnostics.raw_condition
             self.assertEqual(values.size, 2)
-            self.assertEqual(json.loads(saved['results'][1]['resolved_config_json'])['initialization'], self.initialization)
+            self.assertEqual(json.loads(saved['results'][optimizer_index]['resolved_config_json'])['initialization'], self.initialization)
 
 
 if __name__ == '__main__':

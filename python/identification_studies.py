@@ -22,7 +22,7 @@ FINITE_STATUSES = {"converged", "stalled", "max_iterations", "ok",
 DIAGNOSTIC_PASS_STATUSES = {"converged", "sampling_complete"}
 INITIAL_CONDITION_POLICIES = {
     "optimization": "zero_state_fit_after_burn_in",
-    "BI_HMC": "known_zero_signal_start_before_observed_input_prehistory; finite_noise_start_covariance",
+    "BI_HMC": "zero_state_fit_after_burn_in",
 }
 
 
@@ -91,16 +91,15 @@ def reference_data(cfg, dims, theta, length, seed, device):
     c = beta+lfilter([1.], np.r_[1., d], nu)
     data = {key: torch.as_tensor(values[burn:].copy(), dtype=torch.float64, device=device)
             for key, values in (("r", u), ("nu", nu), ("c", c))}
-    # Input prehistory is observed experimental information, not latent truth.
-    # HMC replays it using each candidate's coefficients from the known zero
-    # signal start; it never receives the true internal state or innovations.
+    # Preserve data-generation provenance for replay/export. Every method,
+    # including HMC, fits zero states at the retained-record start.
     data["input_prehistory"] = torch.as_tensor(u[:burn].copy(), dtype=torch.float64, device=device)
     data["noise_burn_in"] = burn
     return data
 
 
 def prefix_data(data, length):
-    """Shorten the measured record without shortening its known prehistory."""
+    """Shorten the measured record while preserving data-generation provenance."""
     return {key: value[:length] if key in {"r", "nu", "c"} else value
             for key, value in data.items()}
 
@@ -143,13 +142,14 @@ def _run(cfg, methods, configs, dims, theta, data, metadata, verbose, progress):
                           False, verbose=verbose, experiment_cfg=cfg, run_metadata=metadata,
                           progress_callback=progress if progress.enabled else None,
                           data_context={"input_prehistory": data.get("input_prehistory"),
-                                        "noise_burn_in": data.get("noise_burn_in")})
+                                        "data_burn_in": data.get("noise_burn_in", 0)})
 
 
 def _save_case(path, cfg, study, methods, dims, theta, data, runs, name, mode):
     settings = cfg["settings"]
     summary = summarize_montecarlo(runs, methods, theta, int(settings["K_max"]))
-    study = {**study, "initial_condition_policies": INITIAL_CONDITION_POLICIES,
+    study = {**study, "initial_condition_policy": "zero_state_fit_after_burn_in",
+             "initial_condition_policies": INITIAL_CONDITION_POLICIES,
              "sampler_seed_policy": "method_seed_plus_deterministic_repetition_metadata; independent_data_rng"}
     save_comparison_results(Path(path), runs[0], experiment_name=name, mode=mode,
         selected_methods=methods, dims=dims, theta_true=theta, lambda_g=len(data["r"]),
@@ -351,7 +351,7 @@ def run_noise_study(cfg, study, *, experiment_name="example_CSTR", output_file=N
              "resolved_configs": resolved_configs, "summary_population": population,
              "data_seeds": seed+np.arange(count), "case_files": case_files,
              "data_pairing": "matched_input_and_standard_innovations",
-             "config_json": config_json(study), "initial_condition_policy": "method_specific",
+             "config_json": config_json(study), "initial_condition_policy": "zero_state_fit_after_burn_in",
              "initial_condition_policies": INITIAL_CONDITION_POLICIES,
              "sampler_seed_policy": "method_seed_plus_deterministic_repetition_metadata; independent_data_rng",
              "posterior_storage": "full_draws_in_case_files_when_save_case_results_is_true",
@@ -453,7 +453,7 @@ def run_record_length_study(cfg, study, *, experiment_name="example_CSTR", outpu
              "resolved_configs": resolved_configs, "summary_population": population,
              "data_seeds": seed+np.arange(count), "inverse_n_coefficients": coefficients,
              "case_files": case_files, "config_json": config_json(study),
-             "initial_condition_policy": "method_specific",
+             "initial_condition_policy": "zero_state_fit_after_burn_in",
              "initial_condition_policies": INITIAL_CONDITION_POLICIES,
              "sampler_seed_policy": "method_seed_plus_deterministic_repetition_metadata; independent_data_rng",
              "posterior_storage": "full_draws_in_case_files_when_save_case_results_is_true",

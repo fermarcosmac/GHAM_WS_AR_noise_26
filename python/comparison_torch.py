@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import argparse
 import hashlib
 import time
 from datetime import datetime
@@ -47,12 +48,12 @@ PYTHON_EXTRA_METHODS = ["WS-GGHAM-2-I", "WS-GGHAM-2-H"]
 FINITE_RESULT_STATUSES = {"ok", "converged", "max_iterations", "stalled", "sampling_complete", "sampling_warning"}
 
 
-def inference_data_context(data: dict, burn_in: int = 0) -> dict:
-    """Observed prehistory and noise-start policy; never expose true innovations."""
+def record_data_context(data: dict, burn_in: int = 0) -> dict:
+    """Data provenance for replay/export only; never an inference input."""
     history = data.get("input_prehistory")
     if history is None and "r_full" in data:
         history = data["r_full"][:burn_in]
-    context = {"noise_burn_in": int(data.get("noise_burn_in", burn_in))}
+    context = {"data_burn_in": int(data.get("noise_burn_in", burn_in))}
     if history is not None:
         context["input_prehistory"] = history
     return context
@@ -110,8 +111,7 @@ def run_bayesian_identification(
     if verbose:
         print("BI_HMC: separate HMC loop; final estimator = physical posterior mean", flush=True)
     sample = run_bi_hmc(r, c, dims, cfg, initial_theta=initial,
-        input_history=context.get("input_prehistory", context.get("input_history")),
-        noise_burn_in=context.get("noise_burn_in"), seed=sampler_seed, progress_callback=report)
+                        seed=sampler_seed, progress_callback=report)
     theta_hat = _numpy(sample["theta_hat"]).astype(float).reshape(-1)
     valid = bool(sample.get("point_estimate_valid", np.isfinite(theta_hat).all()))
     truth = theta_true.detach().cpu().numpy().reshape(-1)
@@ -131,11 +131,12 @@ def run_bayesian_identification(
         "initialization_sha256": array_digest(initial), "backend": "python", "dtype": "torch.float64",
         "device": "cpu", "torch_version": str(torch.__version__), "python_version": sys.version.split()[0],
         "sampler_seed": sampler_seed, "point_estimate": "posterior_mean",
-        "forward_model": "exact_iir", "noise_burn_in": sample.get("noise_burn_in", -1),
-        "noise_initialization": sample.get("noise_initialization", "stationary"),
+        "forward_model": "exact_iir", "noise_burn_in": 0,
+        "noise_initialization": "zero", "initial_condition_policy": "zero_state_fit_after_burn_in",
         "signal_initialization": sample.get("signal_initialization", "zero_at_record_start"),
-        "input_history_length": sample.get("input_history_length", 0),
-        "input_history_sha256": array_digest(context.get("input_prehistory", context.get("input_history", [])))})
+        "input_history_length": 0, "input_history_used_for_inference": False,
+        "data_burn_in": int(context.get("data_burn_in", 0)),
+        "input_history_sha256": array_digest(context.get("input_prehistory", []))})
     resolved_cfg = sample.get("resolved_config", cfg)
     resolved_json = config_json(resolved_cfg)
     metadata["config_sha256"] = hashlib.sha256(resolved_json.encode("utf-8")).hexdigest()
@@ -233,6 +234,7 @@ def save_comparison_results(
         "conv_threshold": conv_threshold,
         "sigma_nu": sigma_nu,
         "burn_in": burn_in,
+        "initial_condition_policy": "zero_state_fit_after_burn_in",
         "enforce_fixed_iterations": enforce_fixed_iterations,
         "dims": {"na": dims.na, "nb": dims.nb, "nf": dims.nf, "nd": dims.nd},
         "theta_true": theta_true.detach().cpu().numpy().reshape(-1, 1),
@@ -610,12 +612,39 @@ def summarize_montecarlo(mc_runs: list[list[dict[str, Any]]], selected_methods: 
     }
 
 
-def main() -> None:
-    experiment_name = "example_CSTR"
+def main(argv=None) -> None:
+    parser = argparse.ArgumentParser(description="Saved FSM comparisons, including zero-state BI_HMC.")
+    parser.add_argument("--experiment", default="example_CSTR")
+    parser.add_argument("--mode", choices=("EXAMPLE", "MONTECARLO"))
+    parser.add_argument("--runs", type=int)
+    parser.add_argument("--iterations", type=int)
+    parser.add_argument("--length", type=int)
+    parser.add_argument("--methods", nargs="+")
+    parser.add_argument("--hmc-config", type=Path, help="Flat JSON overrides for BI_HMC.")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--cpu", action="store_true")
+    parser.add_argument("--no-show", action="store_true")
+    args = parser.parse_args(argv)
+    for key in ("runs", "iterations", "length"):
+        value = getattr(args, key)
+        if value is not None and value < 1:
+            parser.error(f"--{key} must be positive")
+    experiment_name = args.experiment
 
-    device = default_device()
+    device = torch.device("cpu") if args.cpu else default_device()
     dtype = choose_dtype()
     exp_cfg = load_experiment_config(experiment_name)
+    if args.mode is not None:
+        exp_cfg["mode"] = args.mode
+    if args.runs is not None:
+        exp_cfg["N_MC"] = args.runs
+    if args.iterations is not None:
+        exp_cfg["settings"]["K_max"] = args.iterations
+    if args.length is not None:
+        exp_cfg["settings"]["lambda_g"] = args.length
+    if args.methods is not None:
+        exp_cfg["python_selected_methods"] = args.methods
+        exp_cfg["include_python_extra_methods"] = False
     dims, theta_true = build_dims_and_theta(exp_cfg, dtype=dtype, device=device)
 
     mode = exp_cfg.get("mode", "EXAMPLE").upper()
@@ -629,11 +658,16 @@ def main() -> None:
     sigma_nu = float(settings["sigma_nu"])
     burn_in = int(settings["burn_in"])
     enforce_fixed_iterations = bool(settings.get("enforce_fixed_iterations", mode == "MONTECARLO"))
-    make_local_plots = bool(exp_cfg.get("make_local_plots", mode == "EXAMPLE"))
+    make_local_plots = not args.no_show and bool(exp_cfg.get("make_local_plots", mode == "EXAMPLE"))
     config_file = PY_ROOT / exp_cfg.get("python_optim_config", "optim_configs.json")
     method_configs = load_json_config(config_file)["methods"]
+    if args.hmc_config is not None:
+        overrides = load_json_config(args.hmc_config)
+        if not isinstance(overrides, dict) or "hmc" in overrides:
+            parser.error("--hmc-config must contain a flat JSON object")
+        method_configs["BI_HMC"] = {**method_configs.get("BI_HMC", {}), **overrides}
     results_dir = PY_ROOT.parent / "results" / experiment_name
-    results_file = results_dir / f"comparison_fsm_{mode.lower()}.mat"
+    results_file = args.output or results_dir / f"comparison_fsm_{mode.lower()}.mat"
 
     set_seed(seed)
     data = generate_example_data(dims, theta_true, lambda_g, burn_in, sigma_nu, device=device, dtype=dtype)
@@ -652,7 +686,7 @@ def main() -> None:
         enforce_fixed_iterations,
         verbose=True,
         experiment_cfg=exp_cfg, run_metadata={"data_seed": seed, "mc_index": 1, "experiment_name": experiment_name},
-        data_context=inference_data_context(data, burn_in),
+        data_context=record_data_context(data, burn_in),
     )
 
     mc_summary = None
@@ -679,7 +713,7 @@ def main() -> None:
                     enforce_fixed_iterations,
                     verbose=False,
                     experiment_cfg=exp_cfg, run_metadata={"data_seed": run_seed, "mc_index": mc_idx+1, "experiment_name": experiment_name},
-                    data_context=inference_data_context(data_i, burn_in),
+                    data_context=record_data_context(data_i, burn_in),
                 )
             )
         mc_summary = summarize_montecarlo(mc_runs, selected_methods, theta_true, K_max)

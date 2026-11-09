@@ -85,6 +85,7 @@ class BayesianStudyTests(unittest.TestCase):
                         "fsm_resolutions": [{"label": "exact"}]}, output_file=directory/"record.mat")
                 initialization = loadmat(init_path, simplify_cells=True)
                 self.assertEqual(initialization["experiment"]["selected_methods"], "BI_HMC")
+                self.assertEqual(initialization["study"]["initial_condition_policy"], "zero_state_fit_after_burn_in")
                 self.assertTrue(np.isfinite(initialization["mc_summary"]["final_param_estimates"]).all())
                 self.assertEqual(initialization["example_data"]["input_prehistory"].size, 12)
                 initial_seeds = np.asarray(initialization["study"]["sampling_seeds"]).reshape(-1)
@@ -108,14 +109,15 @@ class BayesianStudyTests(unittest.TestCase):
                         result = case["results"]
                         self.assertEqual(result["theta_hist"].size, 0)
                         self.assertEqual(result["posterior_samples"].shape, (2, 8, 6))
-                        self.assertEqual(result["run_metadata"]["input_history_length"], 12)
-                        self.assertEqual(result["run_metadata"]["noise_burn_in"], 12)
-                        self.assertEqual(result["run_metadata"]["noise_initialization"], "finite_burn_in")
+                        self.assertEqual(result["run_metadata"]["input_history_length"], 0)
+                        self.assertEqual(result["run_metadata"]["noise_burn_in"], 0)
+                        self.assertEqual(result["run_metadata"]["data_burn_in"], 12)
+                        self.assertEqual(result["run_metadata"]["noise_initialization"], "zero")
                         self.assertTrue(np.isfinite(result["final_err"]))
         finally:
             torch.set_num_threads(previous_threads)
 
-    def test_record_prefix_preserves_known_prehistory_and_routes_it_to_inference(self):
+    def test_record_prefix_preserves_provenance_separately_from_zero_state_inference(self):
         cfg = copy.deepcopy(load_experiment_config("example_1"))
         cfg["settings"].update(lambda_g=12, burn_in=7, K_max=2)
         dims, theta = build_dims_and_theta(cfg, dtype=torch.float64, device=torch.device("cpu"))
@@ -132,7 +134,7 @@ class BayesianStudyTests(unittest.TestCase):
             _run(cfg, ["BI_HMC"], {}, dims, theta, short, {}, False, quiet)
         context = dispatch.call_args.kwargs["data_context"]
         self.assertIs(context["input_prehistory"], data["input_prehistory"])
-        self.assertEqual(context["noise_burn_in"], 7)
+        self.assertEqual(context["data_burn_in"], 7)
 
     def test_sampler_warnings_remain_distinct_from_passing_diagnostics(self):
         def result(status, estimate, valid=True):

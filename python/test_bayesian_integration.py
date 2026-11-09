@@ -10,7 +10,7 @@ import torch
 from scipy.io import loadmat
 
 from common import load_json_config, set_seed
-from comparison_torch import (build_dims_and_theta, inference_data_context,
+from comparison_torch import (build_dims_and_theta, record_data_context,
     load_experiment_config, run_identification_method, run_method_set,
     save_comparison_results, select_python_methods, summarize_montecarlo)
 from bayesian_plots import plot_bayesian_posteriors, plot_bayesian_outputs
@@ -39,7 +39,7 @@ class BayesianIntegrationTests(unittest.TestCase):
         return run_method_set(methods, self.configs, d["r"], d["nu"] if nu is None else nu,
             d["c"], self.truth if truth is None else truth, self.dims, 28, 3, 0., False,
             verbose=False, experiment_cfg=self.cfg, run_metadata={"mc_index":1,"data_seed":73},
-            data_context=inference_data_context(d, 5))
+            data_context=record_data_context(d, 5))
 
     def test_separate_loop_and_physical_posterior_mean(self):
         with patch("comparison_torch.method_parameter_update", side_effect=AssertionError("optimizer loop used")):
@@ -54,11 +54,13 @@ class BayesianIntegrationTests(unittest.TestCase):
         self.assertEqual(result["accepted_updates"], 0)
         self.assertEqual(result["sampling_transitions"], 26)
         self.assertGreaterEqual(result["total_wall_time"], result["inference_wall_time"])
-        self.assertEqual(result["run_metadata"]["input_history_length"], 5)
+        self.assertEqual(result["run_metadata"]["input_history_length"], 0)
+        self.assertEqual(result["run_metadata"]["noise_initialization"], "zero")
+        self.assertEqual(result["run_metadata"]["data_burn_in"], 5)
         # Optimizer budgets cannot accidentally govern the HMC loop.
         direct = run_identification_method("BI_HMC", self.configs["BI_HMC"], self.data["r"],
             self.data["nu"], self.data["c"], self.truth, self.dims, 28, 0, -1.,
-            verbose=False, data_context=inference_data_context(self.data,5))
+            verbose=False, data_context=record_data_context(self.data,5))
         self.assertEqual(direct["posterior_samples"].shape, (2,8,6))
 
     def test_truth_and_oracle_innovations_change_scores_not_inference(self):
@@ -69,6 +71,17 @@ class BayesianIntegrationTests(unittest.TestCase):
         self.assertEqual(first["sampler_seed"], other["sampler_seed"])
         self.assertNotEqual(first["final_err"], other["final_err"])
         self.assertNotEqual(first["final_output_rmse"], other["final_output_rmse"])
+
+    def test_record_prehistory_is_provenance_only(self):
+        d = self.data
+        first = self.run_methods(["BI_HMC"])[0]
+        context = {"input_prehistory": torch.full((13,), 1000.), "data_burn_in": 13}
+        other = run_method_set(["BI_HMC"], self.configs, d["r"], d["nu"], d["c"],
+            self.truth, self.dims, 28, 3, 0., False, verbose=False, experiment_cfg=self.cfg,
+            run_metadata={"mc_index": 1, "data_seed": 73}, data_context=context)[0]
+        np.testing.assert_array_equal(first["posterior_samples"], other["posterior_samples"])
+        self.assertNotEqual(first["run_metadata"]["input_history_sha256"], other["run_metadata"]["input_history_sha256"])
+        self.assertFalse(other["run_metadata"]["input_history_used_for_inference"])
 
     def test_mixed_method_export_preserves_bayesian_fields_in_either_order(self):
         results = self.run_methods(["WS-GGI","BI_HMC"])
@@ -112,7 +125,7 @@ class BayesianIntegrationTests(unittest.TestCase):
         result = run_method_set(["BI_HMC"], {"BI_HMC": config}, d["r"], d["nu"], d["c"],
             self.truth, self.dims, 28, 3, 0., False, verbose=False,
             experiment_cfg=self.cfg, run_metadata={"mc_index": 1},
-            data_context=inference_data_context(d, 5), progress_callback=events.append)[0]
+            data_context=record_data_context(d, 5), progress_callback=events.append)[0]
         self.assertEqual(result["sampler_seed"], 9071)
         self.assertEqual(result["posterior_samples"].shape, (2,8,6))
         self.assertEqual(result["sampling_transitions"], 20)

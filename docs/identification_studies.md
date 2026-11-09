@@ -103,17 +103,21 @@ part of that method and its measured runtime. The initialization experiment
 keeps the measured record fixed; it assesses computational sensitivity, not
 finite-sample bias across independent records.
 
-The generator starts the full signal and noise filters from zero and then
-discards `burn_in` samples. Python now preserves the observed input prefix as
-`example_data.input_prehistory` and the discarded count as
-`example_data.noise_burn_in`. HMC replays this input with each candidate's
-coefficients, starting at the known zero signal state. It uses the exact finite
-initial noise covariance after that burn-in, computed from the candidate noise
-coefficients. Neither the true latent signal state nor the true innovation
-prehistory is supplied to inference. Shorter record-length prefixes keep the
-entire observed input prehistory. Existing optimization methods retain their
-zero-state fitting convention at the retained record's start; these policies
-are recorded separately in `study.initial_condition_policies`.
+The generator starts the full signal and noise filters from zero and discards
+`burn_in` samples. All fitting methods, including HMC, then restart their signal
+and noise states at zero at the first retained sample and score every retained
+innovation. HMC has no prehistory replay, initial-covariance correction, or
+conditional likelihood option. The common `zero_state_fit_after_burn_in` policy
+is recorded in `study.initial_condition_policy` and
+`study.initial_condition_policies`. The generator's burn-in is unchanged.
+
+`example_data.input_prehistory` and `example_data.noise_burn_in` remain saved
+data-generation provenance, including on shorter record-length prefixes. Their
+hashes support the shared Python/MATLAB record checks, without entering HMC.
+Per-run metadata distinguishes `data_burn_in` from inference's fixed
+`noise_burn_in=0`, `input_history_length=0`, and
+`input_history_used_for_inference=false`. Old result files retain their original
+boundary conventions and must be regenerated for the new comparison.
 
 Use per-fit **total wall-clock time**, including initialization, warm-up,
 retained sampling, diagnostics and final scoring. The study arrays
@@ -439,9 +443,8 @@ For each independent realization, the runners generate the longest record once
 and fit nested prefixes. All methods, lengths, and FSM resolutions share those
 prefixes. The input and innovations are independent Gaussian sequences; output
 truth is generated with recursive IIR filtering, independently of the FSM fit's
-frequency grid. The optimization methods retain the current zero-state boundary
-convention after discarding the generator's burn-in; HMC uses the preserved
-input prehistory and finite initial noise covariance described above.
+frequency grid. All methods, including HMC, use the common zero-state fitting
+convention after discarding the generator's burn-in.
 Thus boundary/transient effects are included
 in the finite-record behavior. Changing the longest configured length can change
 the noise realization; the full study settings and seeds define reproduction.

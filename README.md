@@ -74,9 +74,42 @@ run that section, then uncomment and run the block you need.
 | Compare methods, estimates, and conditioning | [plot_comparison_results.m](mlab/plot_comparison_results.m) | Load the Python MAT files in the MATLAB plotter. |
 | Plot bias, RMSE, and outcome tables | [plot_record_length_study.m](mlab/plot_record_length_study.m) | Load the Python MAT files in the MATLAB plotter. |
 
-The Python example and the three Python study scripts expose command-line options
-and `--help`. The ordinary Python comparison script still uses its source-level
-benchmark selection; its programmatic API supports exact method subsets.
+All Python experiment entry points expose command-line options and `--help`.
+
+### Run both parametrizations from the repository root
+
+Activate the project's Python environment, then run any of:
+
+```text
+python python/run_studies.py --study montecarlo --cpu
+python python/run_studies.py --study initialization --cpu
+python python/run_studies.py --study noise --cpu
+python python/run_studies.py --study record-length --cpu
+```
+
+Each command runs **both benchmarks** (`example_1` and `example_CSTR`) and **both
+parametrizations**. Python runs FSM first, including the configured BI_HMC method;
+MATLAB then runs PL. MATLAB plotting reuses the saved Python BI_HMC baseline.
+Monte Carlo and initialization also export the matching Python records/starts
+for PL, preserving paired comparisons. Noise and record-length retain their
+existing backend-specific data generators and statistical pairing rules.
+
+MATLAB must be on `PATH`; otherwise use `--matlab "C:/Program Files/MATLAB/R2026a/bin/matlab.exe"`.
+No changes to JSON or source are needed to switch benchmark/backend:
+
+```text
+python python/run_studies.py --study montecarlo --experiment example_1 --parametrization fsm --cpu
+python python/run_studies.py --study initialization --experiment example_CSTR --parametrization pl
+python python/run_studies.py --study noise --runs 5 --iterations 20 --cpu --dry-run
+```
+
+`--dry-run` prints the complete call sequence without starting either backend or
+writing results. Defaults come from the benchmark JSON files and
+`configs/studies.json`; `--runs` and `--iterations` override both backends in
+memory. `--hmc-config path/to/settings.json` overrides only the Python sampler.
+PL-only Monte Carlo/initialization requires the corresponding completed FSM
+results. Existing results made with the former BI_HMC boundary treatment keep
+their original meaning: regenerate them before comparing with the new results.
 
 ## Single examples and comparisons
 
@@ -97,7 +130,7 @@ optimization demos retain their original initialization, plots, and relative-ste
 stopping behavior. They do not save the comparison MAT schema.
 MATLAB's demo explicitly implements WS-GGI, even if its configured method label
 is changed. Python selects `python_example_method`, then `example_method`, then
-its built-in WS-GGHAM-1-dH default; `--method` overrides that selection.
+its built-in BI_HMC default; `--method` overrides that selection.
 The `BI_HMC` example uses the saved comparison schema described below.
 Experiment-level initialization, stopping, and
 diagnostic overrides described below belong to the comparison/study runners.
@@ -175,16 +208,17 @@ The export requires only signal generation and evaluation of saved estimates.
 ### Python comparison: configured run or exact method subset
 
 ```text
-python python/comparison_torch.py
+python python/comparison_torch.py --experiment example_CSTR --mode MONTECARLO --cpu --no-show
 ```
 
-The script's `main()` currently selects `example_CSTR`. Edit that source-level
-selection to use `example_1`; edit the benchmark JSON for ordinary comparison
-settings. `python_selected_methods`, if provided, takes precedence over
+Use `--experiment example_1` to switch benchmark. `--runs`, `--iterations`,
+`--length`, `--methods`, `--hmc-config`, and `--output` provide local overrides.
+Without arguments, the default benchmark remains `example_CSTR` and its JSON
+selects the mode. `python_selected_methods`, if provided, takes precedence over
 `selected_methods`. The ordinary Python runner and study runners also append
 WS-GGHAM-2-I and WS-GGHAM-2-H unless `include_python_extra_methods` is `false`.
 `BI_HMC` is selected explicitly and is never appended automatically.
-To run an **exact subset**, call `run_method_set`
+Use `--methods WS-GGI BI_HMC` for an exact CLI subset, or call `run_method_set`
 directly, as in this complete short example from a Python session at the repo root:
 
 ```python
@@ -301,14 +335,16 @@ trajectory plots. `sampling_complete` means the configured diagnostics passed;
 The default finite cohort includes valid estimates from either status, while
 the diagnostics-passing/converged cohort excludes warnings.
 
-Python studies preserve observed input prehistory and the discarded noise
-sample count, so HMC fits the retained record with the correct zero-start signal
-history and finite-burn-in noise covariance. It never receives the true internal
-state or true innovation history. Full posterior draws are in comparison case
-files; noise/record-length aggregates retain final estimates, diagnostics and
-total runtimes. Enable `save_case_results` to retain those full posterior files.
+Every method, including BI_HMC, now fits zero signal and AR-noise states at the
+retained record's start and scores every retained sample. BI_HMC has no input
+prehistory replay, initial-noise covariance correction, or conditional burn-in
+likelihood option. Data-generation burn-in is unchanged. Input prehistory and
+its hash remain in saved records only for provenance and PL replay checks; they
+are not passed to Bayesian inference. Full posterior draws are in comparison
+case files; noise/record-length aggregates retain final estimates, diagnostics
+and total runtimes. Enable `save_case_results` to retain those posterior files.
 The [study guide](docs/identification_studies.md#including-bi_hmc-in-python-studies)
-describes the arrays and the different boundary policies of existing optimizers.
+describes the arrays and the common zero-state fitting convention.
 
 ## Initialization sensitivity
 

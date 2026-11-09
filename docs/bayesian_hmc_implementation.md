@@ -44,15 +44,16 @@ retaining the coefficients, posterior, and explicit warning for inspection.
 ## Inference model and numerical method
 
 `python/bayesian_hmc.py` owns the complete sampler. Its inference API accepts
-observations, dimensions, priors, starts, and observed input history. It does
+observations, dimensions, priors, and parameter starts. It does
 not accept true parameters, true innovations, or the benchmark's true noise
 standard deviation.
 
-1. Replay the known input prehistory and retained input through the candidate
-   causal IIR block, starting from the specified known zero state before that
-   input history. Apply the polynomial to obtain the candidate noise-free mean.
+1. Filter only the retained input through the candidate causal IIR block,
+   starting from zero at its first sample. Apply the polynomial to obtain the
+   candidate noise-free mean.
 2. Form residuals `e=c-beta`, whiten them with the candidate output-AR
-   polynomial, and include the selected initial-noise contribution in `Q`.
+   polynomial, with pre-record residuals fixed to zero. Sum all retained
+   squared innovations to form `Q`.
 3. Evaluate the normalized Gaussian innovation likelihood, independent fixed
    Gaussian coefficient priors on the stable domain, and inverse-gamma
    innovation-variance prior.
@@ -83,28 +84,36 @@ are saved. Different devices and other concurrent work can affect elapsed time.
 
 ## Boundaries and forward-model conventions
 
-The shared runners pass observed input prehistory and the number of discarded
-noise-start samples. These are experimental inputs and boundary information,
-not hidden internal states or true innovations.
+All inference now uses the same `zero_state_fit_after_burn_in` convention as
+the optimization methods. The signal filter starts from zero at the first
+retained input; residuals before that record are zero. With
+`e[t]=c[t]-beta[t]`, the whitened residual is
+`nu[t]=e[t]+sum(d[i]*e[t-i])`, using only available lags, and
+`Q=sum(nu**2)` includes **every** retained sample. The zero-state AR whitening
+matrix is unit lower triangular. Its determinant is one, so the log likelihood
+is `-N/2*log(2*pi*sigma2)-Q/(2*sigma2)`.
 
-With `noise_burn_in` supplied, the initial retained AR residual block uses the
-exact covariance after that finite zero-start burn-in. It is computed from the
-candidate AR impulse response, including its dependence on the candidate `d`.
-Without that context, the explicitly selected `noise_initialization` policy is
-used: `stationary`, `zero`, `conditional`, or configured `finite_burn_in`.
-Stationary covariance uses Yule-Walker equations; conditional likelihood omits
-the initial block and uses the corresponding smaller sample count.
+The input-history arguments and stationary, finite-burn-in, and conditional
+covariance branches have been removed. Obsolete `noise_initialization`,
+`noise_burn_in`, `input_history`, and `input_prehistory` sampler settings raise
+an error rather than silently selecting another likelihood. The physical
+priors, transformation Jacobian, 30-step initialization optimization, warm-up,
+sampler controls and physical posterior-mean estimator are unchanged.
 
-Without observed input prehistory, the signal model explicitly starts at zero
-at the retained record's beginning. Unknown signal initial states are not
-sampled in this implementation. Supply the known experimental history, or
-extend the model with initial-state nuisance variables for data requiring it.
+Generation still starts the full filters from zero and discards the configured
+burn-in. Fitting restarts the filters afterwards. This common fitting convention
+therefore retains finite-record startup effects. Saved input prehistory and
+its SHA-256 hash are **data provenance**, used to replay records in MATLAB;
+they never enter the inference API. Metadata separates `data_burn_in` from
+inference's fixed `noise_burn_in=0` and `input_history_length=0`.
 
 The existing standalone/example generator uses a frequency-sampling filter
 approximation. The study generator uses an exact recursive IIR. BI_HMC fits the
 same original coefficient model through an exact IIR likelihood; it does not
-inherit an FSM grid or truncated impulse response. This target/boundary
-distinction should be reported with comparisons, especially for short records.
+inherit an FSM grid or truncated impulse response. The numerical forward-model
+distinction remains, while the retained-record starting convention is common.
+Results saved before this change are not relabeled or rewritten; regenerate
+them to use the new likelihood consistently in comparisons.
 
 ## Output assessment versus inference
 
@@ -116,8 +125,8 @@ truth and innovations to compute ordinary assessment scores:
   reconstruction RMSE, using the common legacy assessment convention.
 - `output_estimate` and `output_error`: the corresponding reconstructed output
   and measured-minus-reconstructed difference.
-- `noise_free_output_estimate`: the actual fitted exact-IIR mean response,
-  including known observed input history.
+- `noise_free_output_estimate`: the fitted exact-IIR mean response from zero
+  state at the retained-record start.
 
 The shared reconstruction resets filtering at the retained record and uses the
 existing FSM simulation, just as other comparison methods do. It is an
@@ -143,7 +152,6 @@ It is opt-in and is not silently added to all existing method lists.
 | `coefficient_prior_mean`, `coefficient_prior_std` | Scalar or parameter-length physical prior settings. |
 | `prior_a_std`, `prior_b_std`, `prior_f_std`, `prior_d_std` | Optional scalar or block-length prior scale overrides. |
 | `variance_prior_shape`, `variance_prior_scale` | Inverse-gamma shape and scale: density proportional to `s^(-shape-1)*exp(-scale/s)`. |
-| `noise_initialization`, `noise_burn_in` | Boundary policy when a runner has not supplied explicit burn-in context. |
 | `seed`, `progress_every` | Base sampler seed and heartbeat interval in transitions. |
 | `max_rhat`, `min_ess`, `divergence_threshold` | Explicit diagnostics/energy-error thresholds. |
 | `cpu_threads` | Temporary PyTorch CPU thread count; zero preserves the caller setting. |
@@ -195,6 +203,20 @@ participate in common accuracy summaries. The three study entry points also
 accept `--methods BI_HMC ...`; see the README and identification-study notes
 for initialization, noise, and record-length/bias settings.
 
+To run both parametrizations and both benchmarks from the repo root:
+
+```text
+python python/run_studies.py --study montecarlo --cpu
+python python/run_studies.py --study initialization --cpu
+python python/run_studies.py --study noise --cpu
+python python/run_studies.py --study record-length --cpu
+```
+
+PL is executed through MATLAB `-batch`. The launcher runs FSM first and reuses
+its BI_HMC baseline in PL analysis. Monte Carlo and initialization export
+verified shared records/starts before running PL. Add `--dry-run` to preview
+the calls, or `--experiment example_1 --parametrization fsm` to select a subset.
+
 ## Stored posteriors, validity, and time
 
 Per-result fields include:
@@ -235,8 +257,8 @@ iteration cost.
 
 ## Code map and validation
 
-- `python/bayesian_hmc.py`: exact filter adjoint, physical density,
-  transformations, boundary covariance, HMC, adaptation and posterior diagnostics.
+- `python/bayesian_hmc.py`: exact zero-state filter adjoint, physical density,
+  transformations, HMC, adaptation and posterior diagnostics.
 - `python/comparison_torch.py`: independent Bayesian dispatch, terminal
   assessment, seed/context routing, mixed exports and common summaries.
 - `python/example_torch.py`: CLI selection and sampler controls, posterior
@@ -261,7 +283,7 @@ python -B -m unittest discover -s python -p "test_*.py"
 ```
 
 The focused tests cover causal-filter gradcheck; complete-posterior gradients
-under each boundary policy; dense covariance versus innovation likelihoods;
+for the common zero-state likelihood; dense covariance versus innovation likelihoods;
 general-order stability/inversion/Jacobians; an independently integrated linear
 posterior; seed and thread-state isolation; frozen retained adaptation;
 non-oracle integration; mixed exports; and all three study pipelines.
@@ -272,7 +294,8 @@ coverage. Longer runs must still be diagnosed using their saved results.
 
 ### Validated example, 30 October 2026
 
-This recorded run predates the prior adjustment above: it used inverse-gamma
+This historical run predates both the common zero-state fitting policy and the
+prior adjustment above: it used inverse-gamma
 shape `3`, scale `0.02` (prior mean `0.01`). The saved MAT/JSON configuration
 preserves those original settings. Its numerical results are not a rerun with
 the current, smaller prior mean.

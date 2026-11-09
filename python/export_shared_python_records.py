@@ -131,14 +131,16 @@ def export_records(source_file: Path, mode: str) -> Path:
     return output
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--experiment", choices=BENCHMARKS, action="append", help="Default: both benchmarks")
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
-    args = parser.parse_args()
+    parser.add_argument("--mode", choices=tuple(SOURCE_FILES), action="append",
+                        help="Export only the selected study; default: Monte Carlo and initialization")
+    args = parser.parse_args(argv)
     for benchmark in args.experiment or BENCHMARKS:
-        for mode, filename in SOURCE_FILES.items():
-            export_records(args.results_dir / benchmark / filename, mode)
+        for mode in args.mode or SOURCE_FILES:
+            export_records(args.results_dir / benchmark / SOURCE_FILES[mode], mode)
 
 
 if __name__ == "__main__":
