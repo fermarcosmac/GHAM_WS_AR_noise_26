@@ -56,6 +56,7 @@ at the end check the installed environment on short experiments.
 | [docs/comparison_diagnostics.md](docs/comparison_diagnostics.md) | Initialization, stopping, diagnostic definitions, and result schema. |
 | [docs/identification_studies.md](docs/identification_studies.md) | Study design, statistical interpretation, and saved array dimensions. |
 | [docs/bayesian_hmc_implementation.md](docs/bayesian_hmc_implementation.md) | BI_HMC model, sampler controls, posterior diagnostics, and result schema. |
+| [docs/boundary_treatment_report.md](docs/boundary_treatment_report.md) | Boundary conventions, controlled ablations, measured effects, and validation; [PDF](output/pdf/boundary_treatment_report.pdf). |
 | [docs/manuscript/](docs/manuscript/) | Manuscript sources and section previews. |
 
 ## Choose an entry point

@@ -79,25 +79,29 @@ else
 end
 
 fig=figure('Color','w','Name',[backend ' noise sensitivity: final parameter error'], ...
-    'Units','centimeters','Position',[2 2 28 7*ceil(M/3)]);
+    'Units','centimeters','Position',[2 2 20 12]);
 if isprop(fig,'Theme'), fig.Theme='light'; end
 colors=colororder(fig); colors=repmat(colors,ceil(M/size(colors,1)),1);
-tl=tiledlayout(fig,ceil(M/3),3,'TileSpacing','compact','Padding','compact');
-for m=1:M
-    ax=nexttile(tl); hold(ax,'on');
-    plot_curve(ax,levels,error_mean(:,m),error_std(:,m),colors(m,:),names{m},'noise_error');
-    format_axis(ax,levels);
-    title(ax,method_figure_label(names{m}),'Interpreter','none');
-    xlabel(ax,'Innovation standard deviation $\sigma_\nu$','Interpreter','latex');
-    ylabel(ax,error_label,'Interpreter','none');
-    if ~any(isfinite(error_mean(:,m)))
-        if all(states(:,m,:)=="skipped",'all'), message='Skipped';
-        else, message='No retained estimates'; end
-        text(ax,.5,.5,message,'Units','normalized','HorizontalAlignment','center','Interpreter','none');
-    elseif any(used(:,m)<R)
-        counts=strjoin(arrayfun(@(n)sprintf('%d',n),used(:,m).','UniformOutput',false),', ');
-        subtitle(ax,sprintf('Retained by noise level: %s / %d',counts,R),'Interpreter','none','FontSize',8);
-    end
+tl=tiledlayout(fig,1,1,'TileSpacing','compact','Padding','compact');
+ax=nexttile(tl); hold(ax,'on');
+% Keep the existing method colors while placing BI-HMC last in the legend.
+is_bayesian=strcmpi(names,'BI_HMC');
+method_order=[find(~is_bayesian(:)).' find(is_bayesian(:)).'];
+for m=method_order
+    if ~any(isfinite(error_mean(:,m))), continue; end
+    plot_curve(ax,levels,error_mean(:,m),error_std(:,m),colors(m,:), ...
+        method_figure_label(names{m}),'noise_error');
+end
+format_axis(ax,levels);
+ylim(ax,[0 10]);
+xlabel(ax,'Innovation standard deviation $\sigma_\nu$','Interpreter','latex');
+ylabel(ax,error_label,'Interpreter','none');
+if any(isfinite(error_mean),'all')
+    lg=legend(ax,'Interpreter','none','NumColumns',3,'FontSize',8);
+    lg.Layout.Tile='south';
+else
+    text(ax,.5,.5,'No retained estimates','Units','normalized', ...
+        'HorizontalAlignment','center','Interpreter','none');
 end
 title(tl,[backend ': sensitivity to innovation standard deviation'],'Interpreter','none');
 subtitle(tl,{error_note,['Summary population: ' population]},'Interpreter','none','FontSize',9);

@@ -58,7 +58,7 @@ for backend={'PL','FSM'}
     assert(max(abs(report.StdRelativeErrorPct(rows)-expected_std))<1e-12);
     assert(max(abs(report.MCSE(rows)-expected_std/sqrt(10)))<1e-12);
     curve=findobj(figures(1),'Tag','noise_error','DisplayName','WS-GGI');
-    bars=findall(curve.Parent,'Tag','noise_error_interval');
+    bars=findall(curve.Parent,'Tag','noise_error_interval','Color',curve.Color);
     assert(isscalar(bars));
     assert(max(abs(bars.YPositiveDelta(:)-expected_std))<1e-12);
     assert(max(abs(bars.YNegativeDelta(:)-expected_std))<1e-12);

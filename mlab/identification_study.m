@@ -106,8 +106,10 @@ switch kind
             for key = fieldnames(stats).'
                 name = key{1}; value = stats.(name);
                 if ismember(name,{'bias','variance','rmse','mcse','ci_low','ci_high','count'})
+                    if ~isfield(statistics,name), statistics.(name)=NaN(L,M,n); end
                     statistics.(name)(j,:,:) = reshape(value,[1 M n]);
                 else
+                    if ~isfield(statistics,name), statistics.(name)=NaN(L,M); end
                     statistics.(name)(j,:) = reshape(value,[1 M]);
                 end
             end
@@ -184,9 +186,13 @@ switch kind
             stats = study_bias_statistics(values,states,sys.theta_true,study.summary_population);
             for key = fieldnames(stats).'
                 name = key{1}; value = stats.(name);
-                if ismatrix(value) && size(value,2)==n
+                % Allocate the complete tensor before indexed assignment:
+                % MATLAB can collapse singleton method/parameter dimensions.
+                if ismember(name,{'bias','variance','rmse','mcse','ci_low','ci_high','count'})
+                    if ~isfield(statistics,name), statistics.(name)=NaN(1,L,M,n); end
                     statistics.(name)(1,j,:,:) = reshape(value,[1 1 M n]);
                 else
+                    if ~isfield(statistics,name), statistics.(name)=NaN(1,L,M); end
                     statistics.(name)(1,j,:) = reshape(value,[1 1 M]);
                 end
             end

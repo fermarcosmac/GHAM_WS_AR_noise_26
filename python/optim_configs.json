@@ -2,7 +2,7 @@
   "methods": {
     "BI_HMC": {
       "cpu_threads": 2,
-      "chains": 2,
+      "chains": 1,
       "warmup": 300,
       "samples": 500,
       "leapfrog_steps": 10,

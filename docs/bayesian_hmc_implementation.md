@@ -84,6 +84,10 @@ are saved. Different devices and other concurrent work can affect elapsed time.
 
 ## Boundaries and forward-model conventions
 
+The [boundary-treatment report](boundary_treatment_report.md) documents the
+controlled ablations, measured error changes and MATLAB integration validation.
+It is also available as a [PDF](../output/pdf/boundary_treatment_report.pdf).
+
 All inference now uses the same `zero_state_fit_after_burn_in` convention as
 the optimization methods. The signal filter starts from zero at the first
 retained input; residuals before that record are zero. With
@@ -288,7 +292,9 @@ general-order stability/inversion/Jacobians; an independently integrated linear
 posterior; seed and thread-state isolation; frozen retained adaptation;
 non-oracle integration; mixed exports; and all three study pipelines.
 MATLAB's `test_bayesian_comparison_plots` and `test_bayesian_study_reports`
-validate posterior plotting, final-score handling and timing reports. Tiny-budget smoke tests
+validate posterior plotting, final-score handling and timing reports.
+`test_study_single_method` checks parameter-summary axes and inverse-length
+fits when a single optimizer is selected. Tiny-budget smoke tests
 validate wiring, not MCMC convergence, finite-sample unbiasedness or interval
 coverage. Longer runs must still be diagnosed using their saved results.
 
